@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	// register node
 	"rivulet/engine"
 	"rivulet/model"
+	_ "rivulet/nodes/ollama" // register ollama node
 	"rivulet/plugin"
 )
 
@@ -27,12 +27,27 @@ func main() {
 	eng := engine.New(deps)
 
 	wf := model.Workflow{
-		ID:    "wf1",
-		Name:  "EchoFlow",
-		Nodes: []model.Node{{ID: "n1", Type: "echo", Name: "Echo", Timeout: 2 * time.Second, Config: map[string]any{"label": "hi"}}},
+		ID:   "wf_ollama_1",
+		Name: "OllamaSimple",
+		Nodes: []model.Node{
+			{
+				ID:      "n1",
+				Type:    "ollama",
+				Name:    "Ollama",
+				Timeout: 60 * time.Second,
+				Config: map[string]any{
+					"model":  "gemma3:latest", // change to your local model name
+					"prompt": "Summarize: {{.text}}",
+				},
+			},
+		},
 	}
 
-	res, err := eng.Run(context.Background(), "exec-001", wf, map[model.ID]model.Items{"n1": {{"msg": "hello"}}})
+	inputs := map[model.ID]model.Items{
+		"n1": {{"text": "Rivulet is a lightweight, n8n-inspired workflow engine written in Go."}},
+	}
+
+	res, err := eng.Run(context.Background(), "exec-ollama-001", wf, inputs)
 	if err != nil {
 		panic(err)
 	}

@@ -2,10 +2,10 @@ package engine
 
 import "rivulet/model"
 
-// Build adjacency + indegree for topological scheduling
+// Build adjacency + in-degree for topological scheduling
 func topo(wf model.Workflow) (order []model.ID, indeg map[model.ID]int, out map[model.ID][]model.ID) {
-	indeg = map[model.ID]int{}
-	out = map[model.ID][]model.ID{}
+	indeg = map[model.ID]int{}      // Track incoming edges per node
+	out = map[model.ID][]model.ID{} // Track outgoing edges per node
 	for _, n := range wf.Nodes {
 		indeg[n.ID] = 0
 	}
