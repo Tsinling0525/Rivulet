@@ -9,8 +9,8 @@ import (
 	"text/template"
 	"time"
 
-	"rivulet/model"
-	"rivulet/plugin"
+	"github.com/Tsinling0525/rivulet/model"
+	"github.com/Tsinling0525/rivulet/plugin"
 )
 
 // LLMConfig holds common parameters for LLM providers

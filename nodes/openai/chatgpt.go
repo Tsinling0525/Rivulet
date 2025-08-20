@@ -10,9 +10,9 @@ import (
 	"os"
 	"time"
 
-	"rivulet/model"
-	"rivulet/nodes/llm"
-	"rivulet/plugin"
+	"github.com/Tsinling0525/rivulet/model"
+	"github.com/Tsinling0525/rivulet/nodes/llm"
+	"github.com/Tsinling0525/rivulet/plugin"
 )
 
 type ChatGPTNode struct {

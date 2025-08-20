@@ -36,9 +36,9 @@ import (
     "fmt"
     "time"
 
-    "rivulet/engine"
-    "rivulet/model"
-    "rivulet/plugin"
+    "github.com/yourorg/rivulet/engine"
+    "github.com/yourorg/rivulet/model"
+    "github.com/yourorg/rivulet/plugin"
 )
 
 func main() {
@@ -94,8 +94,8 @@ package mynode
 
 import (
     "context"
-    "rivulet/model"
-    "rivulet/plugin"
+    "github.com/yourorg/rivulet/model"
+    "github.com/yourorg/rivulet/plugin"
 )
 
 type MyNode struct{ deps plugin.Deps }

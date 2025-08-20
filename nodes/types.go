@@ -3,8 +3,8 @@ package nodes
 import (
 	"context"
 
-	"rivulet/model"
-	"rivulet/plugin"
+	"github.com/Tsinling0525/rivulet/model"
+	"github.com/Tsinling0525/rivulet/plugin"
 )
 
 type Node interface {

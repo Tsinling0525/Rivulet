@@ -11,10 +11,10 @@ import (
 	"os"
 	"time"
 
-	"rivulet/engine"
-	"rivulet/model"
-	_ "rivulet/nodes/echo" // Import to register the echo node
-	"rivulet/plugin"
+	"github.com/Tsinling0525/rivulet/engine"
+	"github.com/Tsinling0525/rivulet/model"
+	_ "github.com/Tsinling0525/rivulet/nodes/echo" // Import to register the echo node
+	"github.com/Tsinling0525/rivulet/plugin"
 )
 
 // n8nWorkflow represents the n8n workflow format

@@ -1,6 +1,6 @@
 package engine
 
-import "rivulet/model"
+import "github.com/Tsinling0525/rivulet/model"
 
 // Build adjacency + in-degree for topological scheduling
 func topo(wf model.Workflow) (order []model.ID, indeg map[model.ID]int, out map[model.ID][]model.ID) {

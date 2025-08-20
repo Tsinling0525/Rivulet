@@ -3,7 +3,7 @@ package plugin
 import (
 	"context"
 
-	"rivulet/model"
+	"github.com/Tsinling0525/rivulet/model"
 )
 
 type Deps struct {

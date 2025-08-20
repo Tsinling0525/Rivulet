@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"rivulet/engine"
-	"rivulet/model"
-	_ "rivulet/nodes/ollama" // register ollama node
-	"rivulet/plugin"
+	"github.com/Tsinling0525/rivulet/engine"
+	"github.com/Tsinling0525/rivulet/model"
+	_ "github.com/Tsinling0525/rivulet/nodes/ollama" // register ollama node
+	"github.com/Tsinling0525/rivulet/plugin"
 )
 
 type nullBus struct{}
