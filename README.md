@@ -26,87 +26,99 @@ Rivulet/
 
 ## 🎯 Quick Start
 
-### Basic Workflow
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "time"
-
-    "github.com/yourorg/rivulet/engine"
-    "github.com/yourorg/rivulet/model"
-    "github.com/yourorg/rivulet/plugin"
-)
-
-func main() {
-    // Setup dependencies
-    deps := plugin.Deps{
-        State: &memState{},
-        Bus:   &nullBus{},
-    }
-    
-    // Create workflow engine
-    eng := engine.New(deps)
-
-    // Define workflow
-    wf := model.Workflow{
-        ID:   "wf1",
-        Name: "EchoFlow",
-        Nodes: []model.Node{
-            {
-                ID:      "n1",
-                Type:    "echo",
-                Name:    "Echo",
-                Timeout: 2 * time.Second,
-                Config:  map[string]any{"label": "hello"},
-            },
-        },
-    }
-
-    // Execute workflow
-    result, err := eng.Run(context.Background(), "exec-001", wf, map[model.ID]model.Items{
-        "n1": {{"msg": "hello world"}},
-    })
-    
-    if err != nil {
-        panic(err)
-    }
-    
-    fmt.Println(result)
-}
-```
-
-### Run API Server (n8n-compatible)
+### 1. Install and Build
 
 ```bash
-go run cmd/api/main.go
+# Clone the repository
+git clone https://github.com/Tsinling0525/rivulet.git
+cd rivulet
+
+# Build the project
+go build -o rivulet cmd/rivulet/main.go
 ```
 
-Endpoints:
-
-- Create workflow (n8n JSON):
+### 2. Start the API Server
 
 ```bash
-curl -X POST http://localhost:8080/workflows \
+# Start server on default port 8080
+./rivulet server
+
+# Or specify custom port
+RIV_API_PORT=3000 ./rivulet server
+```
+
+The server provides n8n-compatible workflow execution endpoints.
+
+### 3. Run a Workflow from File
+
+Try the included example workflows:
+
+```bash
+# Run echo workflow
+./rivulet run --file data/workflows/n8n_workflow.json
+
+# Run Ollama AI workflow (requires Ollama installed)
+./rivulet run --file data/workflows/ollama_simple.json
+```
+
+### 4. Execute via API
+
+Start a workflow directly with the API:
+
+```bash
+curl -X POST http://localhost:8080/workflow/start \
   -H 'Content-Type: application/json' \
-  -d @examples/n8n_workflow.json
+  -d '{
+    "workflow": {
+      "id": "echo-test",
+      "name": "Echo Test",
+      "nodes": [
+        {
+          "id": "echo1",
+          "name": "Echo Node",
+          "type": "echo",
+          "typeVersion": 1.0,
+          "position": [100, 100],
+          "parameters": {
+            "label": "Hello World!"
+          }
+        }
+      ],
+      "connections": {},
+      "settings": {}
+    },
+    "data": {
+      "echo1": [{"message": "test"}]
+    }
+  }'
 ```
 
-- Start existing workflow:
+### 5. Check Health
 
 ```bash
-curl -X POST http://localhost:8080/workflows/<id>/start \
-  -H 'Content-Type: application/json' \
-  -d '{"data":{}}'
+curl http://localhost:8080/health
 ```
 
-### Running the Example
+### 6. Example Workflow Files
+
+The `data/workflows/` directory contains example workflows:
+
+- **n8n_workflow.json** - Simple echo workflow with connections
+- **ollama_simple.json** - AI workflow using local Ollama LLM
+
+### 7. Development Mode
+
+For development with auto-restart:
 
 ```bash
-go run cmd/flowd/main.go
+# Using go run for development
+go run cmd/rivulet/main.go server
+
+# Run tests
+make test
+
+# Run workflow once
+go run cmd/rivulet/main.go run --file data/workflows/n8n_workflow.json
 ```
 
 ## 🔌 Built-in Nodes
