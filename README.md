@@ -59,6 +59,9 @@ Try the included example workflows:
 
 # Run Ollama AI workflow (requires Ollama installed)
 ./rivulet run --file data/workflows/ollama_simple.json
+
+# Run Python file processing workflow
+./rivulet run --file data/workflows/image_to_latex.json
 ```
 
 ### 4. Execute via API
@@ -105,6 +108,7 @@ The `data/workflows/` directory contains example workflows:
 
 - **n8n_workflow.json** - Simple echo workflow with connections
 - **ollama_simple.json** - AI workflow using local Ollama LLM
+- **image_to_latex.json** - Python script workflow for file processing
 
 ### 7. Development Mode
 
@@ -120,6 +124,83 @@ make test
 # Run workflow once
 go run cmd/rivulet/main.go run --file data/workflows/n8n_workflow.json
 ```
+
+### 8. Python File Processing
+
+Rivulet includes a powerful Python script node for file processing. Here's how to use it:
+
+#### Setup File Processing Workflow
+
+The `image_to_latex.json` example demonstrates file processing:
+
+```json
+{
+  "workflow": {
+    "nodes": [
+      {
+        "id": "convert",
+        "type": "python:script",
+        "parameters": {
+          "script": "data/scripts/img_to_latex.py",
+          "file_id_field": "file_id",
+          "output_field": "latex"
+        }
+      }
+    ]
+  },
+  "data": {
+    "start": [{"file_id": "sample-image"}]
+  }
+}
+```
+
+#### File Structure
+
+Files are stored with metadata in `data/files/<workflow_id>/`:
+
+```bash
+data/files/image_to_latex_workflow/
+├── sample-image          # The actual file
+└── sample-image.json     # File metadata
+```
+
+#### Python Script Example
+
+The Python script (`data/scripts/img_to_latex.py`) receives the file path as an argument:
+
+```python
+#!/usr/bin/env python3
+import os
+import sys
+
+def main():
+    if len(sys.argv) < 2:
+        sys.stderr.write("Usage: img_to_latex.py <image_path>\n")
+        sys.exit(1)
+    
+    img_path = sys.argv[1]
+    name = os.path.basename(img_path)
+    
+    # Generate LaTeX that includes the image
+    tex = f"""\\documentclass{{article}}
+\\usepackage{{graphicx}}
+\\begin{{document}}
+\\includegraphics[width=\\linewidth]{{{name}}}
+\\end{{document}}"""
+    
+    print(tex)  # Output goes to the "latex" field
+
+if __name__ == "__main__":
+    main()
+```
+
+#### How It Works
+
+1. **Input**: Workflow item contains `file_id` field
+2. **File Lookup**: Engine finds file in `data/files/<workflow_id>/<file_id>`
+3. **Script Execution**: Python script runs with file path as argument
+4. **Output**: Script's stdout becomes the specified output field (`latex`)
+5. **Next Node**: Processed data flows to connected nodes
 
 ## 🔌 Built-in Nodes
 
