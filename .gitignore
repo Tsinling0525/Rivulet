@@ -1,0 +1,84 @@
+# Binaries and executables
+/rivulet
+/flowd
+/api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build artifacts
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+/logs/
+/tmp/
+
+# Data directories (user-generated content)
+/data/files/*/
+!/data/files/.gitkeep
+/data/uploads/
+/data/temp/
+
+# Keep example/template files but ignore user data
+#!/data/workflows/*.json
+#!/data/scripts/*.py
+
+# Environment and configuration files
+.env
+.env.local
+.env.*.local
+config.local.*
+*.key
+*.pem
+*.crt
+
+# Runtime and cache directories
+/.cache/
+/node_modules/
+/.npm/
+/.yarn/
+
+# Test coverage
+coverage.out
+coverage.html
+*.cover
+
+# Vendor directory (if using vendor)
+/vendor/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific
+/data/state/
+/data/logs/
+*.pid
+*.sock
+
+# Backup files
+*.bak
+*.backup
+*~
