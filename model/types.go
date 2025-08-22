@@ -37,3 +37,12 @@ type Workflow struct {
 type Item = map[string]any
 
 type Items = []Item
+
+// FileMeta describes an attached file
+type FileMeta struct {
+	ID        string
+	Name      string
+	Size      int64
+	MediaType string
+	CreatedAt time.Time
+}

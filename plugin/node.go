@@ -9,6 +9,7 @@ import (
 type Deps struct {
 	State StateStore
 	Bus   EventBus
+	Files FileStore
 }
 
 type NodeHandler interface {
@@ -23,4 +24,12 @@ type StateStore interface {
 
 type EventBus interface {
 	Emit(ctx context.Context, event string, fields map[string]any) error
+}
+
+// FileStore provides blob/file attachment access scoped by workflow ID
+type FileStore interface {
+	Put(ctx context.Context, workflowID string, filename string, contents []byte, mediaType string) (fileID string, err error)
+	Get(ctx context.Context, workflowID string, fileID string) (filename string, mediaType string, contents []byte, err error)
+	List(ctx context.Context, workflowID string) ([]model.FileMeta, error)
+	Delete(ctx context.Context, workflowID string, fileID string) error
 }

@@ -1,0 +1,52 @@
+{
+  "workflow": {
+    "id": "simple-echo-workflow",
+    "name": "Simple Echo Workflow",
+    "active": true,
+    "nodes": [
+      {
+        "id": "echo1",
+        "name": "Echo Node 1",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "label": "First Echo"
+        }
+      },
+      {
+        "id": "echo2",
+        "name": "Echo Node 2",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [300, 100],
+        "parameters": {
+          "label": "Second Echo"
+        }
+      }
+    ],
+    "connections": {
+      "echo1": {
+        "main": [
+          [
+            {
+              "node": "echo2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {}
+  },
+  "data": {
+    "echo1": [
+      {
+        "message": "Hello from n8n!",
+        "timestamp": "2024-01-01T00:00:00Z",
+        "user": "test-user"
+      }
+    ]
+  }
+}

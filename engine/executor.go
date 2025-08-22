@@ -195,7 +195,7 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 					mu.Unlock()
 					return
 				}
-				// Fallback single-port
+				// Fallback single-port with retry
 				out, err := func() (model.Items, error) {
 					pol := opts.Retry.normalized()
 					for attempt := 0; ; attempt++ {

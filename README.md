@@ -79,10 +79,58 @@ func main() {
 }
 ```
 
+### Run API Server (n8n-compatible)
+
+```bash
+go run cmd/api/main.go
+```
+
+Endpoints:
+
+- Create workflow (n8n JSON):
+
+```bash
+curl -X POST http://localhost:8080/workflows \
+  -H 'Content-Type: application/json' \
+  -d @examples/n8n_workflow.json
+```
+
+- Start existing workflow:
+
+```bash
+curl -X POST http://localhost:8080/workflows/<id>/start \
+  -H 'Content-Type: application/json' \
+  -d '{"data":{}}'
+```
+
 ### Running the Example
 
 ```bash
 go run cmd/flowd/main.go
+```
+
+## 🔌 Built-in Nodes
+
+- `echo` – echoes a label into the item
+- `http:get` – fetch URL into `body` + `status` (templated URL)
+- `logic:if` – routes to ports `true`/`false` based on template expression
+- `merge.concat` – pass-through node (engine performs fan-in)
+- `python:script` – run local Python script over an attached file and put stdout (e.g., LaTeX) into item
+
+Python node config example:
+
+```json
+{
+  "id": "py1",
+  "type": "python:script",
+  "name": "ToLaTeX",
+  "parameters": {
+    "script": "data/scripts/ocr_to_latex.py",
+    "file_id_field": "file_id",
+    "output_field": "latex",
+    "python_bin": "python3"
+  }
+}
 ```
 
 ## 🔌 Plugin System
@@ -180,7 +228,11 @@ result, err := engine.Run(ctx, "exec-123", workflow, inputData)
 ## 🏛️ Core Components
 
 ### Engine
-The execution engine handles workflow scheduling, node execution, and state management.
+Topological executor with:
+- Per-node worker pools (`Concurrency` or `engine.Options`)
+- Fan-in strategies (`concat`, `latest`, `wait_all`)
+- Port-aware routing (`Edge.FromPort` → `Edge.ToPort`)
+- Retry policy with exponential backoff and jitter
 
 ### Plugin System
 Extensible interface for creating custom nodes with:
@@ -194,6 +246,7 @@ Type-safe data structures:
 - **Node** - Individual workflow node
 - **Edge** - Connection between nodes
 - **Items** - Data flowing through nodes
+ - **FileMeta** - Attached file metadata (ID, Name, Size, MediaType, CreatedAt)
 
 ## 🚀 Advanced Features
 
@@ -219,6 +272,16 @@ node := model.Node{
     Timeout:     60 * time.Second,
 }
 ```
+
+## 📦 Files, Paths and Attachments
+
+- File attachments via `plugin.FileStore` with in-memory implementation `infra.NewMemFiles()`
+- Default data directories (configurable via `RIV_DATA_DIR`):
+  - Workflows: `data/workflows`
+  - Scripts: `data/scripts`
+  - Files: `data/files/<workflowID>`
+
+The API server passes a `FileStore` to nodes so they can read/write files during execution.
 
 ## 🔧 Development
 
