@@ -1,0 +1,74 @@
+{
+  "workflow": {
+    "id": "image_to_latex_workflow",
+    "name": "Image to LaTeX",
+    "active": true,
+    "nodes": [
+      {
+        "id": "start",
+        "name": "Start Echo",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "label": "Flow start"
+        }
+      },
+      {
+        "id": "convert",
+        "name": "Convert Image",
+        "type": "python:script",
+        "typeVersion": 1.0,
+        "position": [300, 100],
+        "parameters": {
+          "script": "data/scripts/img_to_latex.py",
+          "file_id_field": "file_id",
+          "output_field": "latex"
+        }
+      },
+      {
+        "id": "end",
+        "name": "End Echo",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [500, 100],
+        "parameters": {
+          "label": "Flow end"
+        }
+      }
+    ],
+    "connections": {
+      "start": {
+        "main": [
+          [
+            {
+              "node": "convert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "convert": {
+        "main": [
+          [
+            {
+              "node": "end",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {}
+  },
+  "data": {
+    "start": [
+      {
+        "message": "kickoff",
+        "file_id": "sample-image"
+      }
+    ]
+  }
+}

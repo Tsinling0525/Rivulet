@@ -54,7 +54,7 @@ func handleStartWorkflow(c *gin.Context) {
 		return
 	}
 	workflow, inputData := n8n.ToRivulet(req)
-	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewMemFiles()}
+	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles()}
 	eng := engine.New(deps)
 	executionID := fmt.Sprintf("exec-%d", time.Now().Unix())
 	result, err := eng.Run(c.Request.Context(), executionID, workflow, inputData)
