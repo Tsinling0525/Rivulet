@@ -1,0 +1,73 @@
+{
+  "workflow": {
+    "id": "tmpl_file_http_save",
+    "name": "Template: File -> HTTP -> Save",
+    "active": true,
+    "nodes": [
+      {
+        "id": "load",
+        "name": "Load File",
+        "type": "files:load",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "file_id_field": "file_id",
+          "out_prefix": "file_"
+        }
+      },
+      {
+        "id": "req",
+        "name": "Upload to API",
+        "type": "http:request",
+        "typeVersion": 1.0,
+        "position": [360, 100],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.example.com/v1/convert",
+          "headers": {
+            "Authorization": "Bearer {{.api_key}}"
+          },
+          "multipart_file_field": "file",
+          "file_bytes_field": "file_bytes",
+          "file_name_field": "file_name",
+          "json_body": {
+            "options": "latex"
+          },
+          "poll": {
+            "enabled": false,
+            "url": "https://api.example.com/v1/jobs/{{.id}}",
+            "interval_ms": 1000,
+            "max_attempts": 60,
+            "done_expr": "{{if eq .status \"completed\"}}true{{else}}false{{end}}"
+          }
+        }
+      },
+      {
+        "id": "save",
+        "name": "Save Result",
+        "type": "fs:write",
+        "typeVersion": 1.0,
+        "position": [620, 100],
+        "parameters": {
+          "path_template": "data/results/{{.file_base}}.json",
+          "field": "body",
+          "mkdirs": true
+        }
+      }
+    ],
+    "connections": {
+      "load": { "main": [[[{ "node": "req", "type": "main", "index": 0 }]]] },
+      "req": { "main": [[[{ "node": "save", "type": "main", "index": 0 }]]] }
+    },
+    "settings": {}
+  },
+  "data": {
+    "load": [
+      {
+        "file_id": "sample-image",
+        "api_key": "YOUR_TOKEN"
+      }
+    ]
+  }
+}
+

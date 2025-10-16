@@ -1,0 +1,58 @@
+{
+  "workflow": {
+    "id": "tmpl_mathpix_image_to_latex",
+    "name": "Template: Mathpix Image → LaTeX",
+    "active": true,
+    "nodes": [
+      {
+        "id": "load",
+        "name": "Load File",
+        "type": "files:load",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": { "file_id_field": "file_id", "out_prefix": "file_" }
+      },
+      {
+        "id": "mathpix",
+        "name": "Call Mathpix",
+        "type": "http:request",
+        "typeVersion": 1.0,
+        "position": [360, 100],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.mathpix.com/v3/text",
+          "headers": {
+            "app_id": "{{.app_id}}",
+            "app_key": "{{.app_key}}"
+          },
+          "json_body": {
+            "src": "data:image/png;base64,{{.file_b64}}",
+            "formats": ["latex_styled"],
+            "rm_spaces": true
+          }
+        }
+      },
+      {
+        "id": "save",
+        "name": "Save Result",
+        "type": "fs:write",
+        "typeVersion": 1.0,
+        "position": [620, 100],
+        "parameters": {
+          "path_template": "data/results/{{.file_base}}.json",
+          "field": "body",
+          "mkdirs": true
+        }
+      }
+    ],
+    "connections": {
+      "load": { "main": [[[{ "node": "mathpix", "type": "main", "index": 0 }]]] },
+      "mathpix": { "main": [[[{ "node": "save", "type": "main", "index": 0 }]]] }
+    },
+    "settings": {}
+  },
+  "data": {
+    "load": [ { "file_id": "sample-image", "app_id": "YOUR_APP_ID", "app_key": "YOUR_APP_KEY" } ]
+  }
+}
+

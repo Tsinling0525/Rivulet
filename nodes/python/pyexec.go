@@ -14,13 +14,16 @@ import (
 )
 
 // ScriptNode runs a local python script against an attached file and emits the script stdout as text
+//
+// WARNING: This node executes scripts directly on the host system and does not provide any sandboxing.
+// Only use this node with trusted scripts.
+//
 // Config:
 // - script: string (required) absolute or relative path to the python script
 // - args: []string (optional) additional args passed before the input file path
 // - file_id_field: string (optional, default: "file_id") item field containing FileStore file ID
 // - output_field: string (optional, default: "latex") item field to write stdout
 // - python_bin: string (optional, default: "python3") interpreter to use
-// - workdir: string (optional) process working directory
 type ScriptNode struct {
 	deps plugin.Deps
 }
@@ -31,21 +34,24 @@ func (n *ScriptNode) Init(ctx context.Context, deps plugin.Deps) error {
 }
 
 func (n *ScriptNode) Process(ctx context.Context, wf model.Workflow, node model.Node, in model.Items) (model.Items, error) {
-	if n.deps.Files == nil {
-		return nil, fmt.Errorf("files store not configured")
-	}
+    if n.deps.Files == nil {
+        return nil, fmt.Errorf("files store not configured")
+    }
 
 	scriptPath, _ := node.Config["script"].(string)
 	if scriptPath == "" {
 		return nil, fmt.Errorf("config.script is required")
 	}
 
-	pythonBin, _ := node.Config["python_bin"].(string)
-	if pythonBin == "" {
-		pythonBin = "python3"
-	}
+    pythonBin, _ := node.Config["python_bin"].(string)
+    if pythonBin == "" {
+        pythonBin = "python3"
+    }
 
-	workdir, _ := node.Config["workdir"].(string)
+    // Ensure Python is available locally
+    if _, err := exec.LookPath(pythonBin); err != nil {
+        return nil, fmt.Errorf("python interpreter not found: %s", pythonBin)
+    }
 
 	var extraArgs []string
 	if raw, ok := node.Config["args"].([]any); ok {
@@ -71,6 +77,7 @@ func (n *ScriptNode) Process(ctx context.Context, wf model.Workflow, node model.
 	if err := os.MkdirAll(execDir, 0o755); err != nil {
 		return nil, err
 	}
+	defer os.RemoveAll(execDir)
 
 	outItems := make(model.Items, 0, len(in))
 
@@ -107,16 +114,27 @@ func (n *ScriptNode) Process(ctx context.Context, wf model.Workflow, node model.
 			return nil, err
 		}
 
-		// build command: pythonBin scriptPath [args...] inputPath
-		args := append([]string{scriptPath}, append(extraArgs, inputPath)...)
-		cmd := exec.CommandContext(ctx, pythonBin, args...)
-		if workdir != "" {
-			cmd.Dir = workdir
+		// copy script to temp dir
+		scriptContent, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return nil, err
 		}
-		// Inherit minimal env
-		cmd.Env = os.Environ()
+		scriptName := filepath.Base(scriptPath)
+		tempScriptPath := filepath.Join(execDir, scriptName)
+		if err := os.WriteFile(tempScriptPath, scriptContent, 0o755); err != nil {
+			return nil, err
+		}
 
-		outBytes, err := cmd.CombinedOutput()
+        // build command: pythonBin scriptName [args...] inputFile
+        args := append([]string{scriptName}, extraArgs...)
+        args = append(args, fmt.Sprintf("input_%s%s", fileID, ext))
+        cmd := exec.CommandContext(ctx, pythonBin, args...)
+        // Run inside the temp execution directory so relative paths resolve
+        cmd.Dir = execDir
+        // Inherit minimal env
+        cmd.Env = os.Environ()
+
+        outBytes, err := cmd.CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("python script failed: %w; output: %s", err, string(outBytes))
 		}

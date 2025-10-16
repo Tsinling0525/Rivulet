@@ -12,6 +12,8 @@ import (
 	"github.com/Tsinling0525/rivulet/infra"
 	apiinfra "github.com/Tsinling0525/rivulet/infra/api"
 	_ "github.com/Tsinling0525/rivulet/nodes/echo"
+	_ "github.com/Tsinling0525/rivulet/nodes/files"
+	_ "github.com/Tsinling0525/rivulet/nodes/fs"
 	_ "github.com/Tsinling0525/rivulet/nodes/http"
 	_ "github.com/Tsinling0525/rivulet/nodes/logic"
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
@@ -85,6 +87,101 @@ func NewRouter() *gin.Engine {
 	// Routes (start-only API)
 	r.GET("/health", handleHealth)
 	r.POST("/workflow/start", handleStartWorkflow)
+
+	// Instance Manager
+	mgr := infra.NewInstanceManager()
+
+	r.POST("/instances", func(c *gin.Context) {
+		var payload struct {
+			WorkflowPath string `json:"workflow_path"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil || payload.WorkflowPath == "" {
+			sendError(c, http.StatusBadRequest, "workflow_path is required")
+			return
+		}
+		inst, err := mgr.CreateFromWorkflowPath(payload.WorkflowPath)
+		if err != nil {
+			sendError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]interface{}{"id": inst.ID, "state": inst.State, "name": inst.Name})
+	})
+
+	r.GET("/instances", func(c *gin.Context) {
+		list := mgr.List()
+		out := make([]map[string]any, 0, len(list))
+		for _, it := range list {
+			out = append(out, map[string]any{
+				"id": it.ID, "name": it.Name, "state": it.State, "created_at": it.CreatedAt.Unix(), "workflow_path": it.WorkflowPath,
+			})
+		}
+		sendSuccess(c, map[string]any{"instances": out})
+	})
+
+	r.GET("/instances/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		inst, ok := mgr.Get(id)
+		if !ok {
+			sendError(c, http.StatusNotFound, "not found")
+			return
+		}
+		sendSuccess(c, map[string]any{
+			"id": inst.ID, "name": inst.Name, "state": inst.State, "created_at": inst.CreatedAt.Unix(), "workflow_path": inst.WorkflowPath,
+		})
+	})
+
+	r.POST("/instances/:id/stop", func(c *gin.Context) {
+		id := c.Param("id")
+		if err := mgr.Stop(id); err != nil {
+			sendError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"stopped": true})
+	})
+
+	r.GET("/instances/:id/logs", func(c *gin.Context) {
+		id := c.Param("id")
+		logs, err := mgr.Logs(id)
+		if err != nil {
+			sendError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"logs": logs})
+	})
+
+	r.POST("/instances/:id/enqueue", func(c *gin.Context) {
+		id := c.Param("id")
+		// Expect {"data": {nodeID: [{...}]}}
+		var body map[string]any
+		if err := c.ShouldBindJSON(&body); err != nil {
+			sendError(c, http.StatusBadRequest, "invalid json")
+			return
+		}
+		if raw, ok := body["data"]; ok {
+			// inputs is map[string][]map[string]any for compatibility (avoid model import error)
+			inputs := map[string][]map[string]any{}
+			if m, ok := raw.(map[string]any); ok {
+				for k, v := range m {
+					if arr, ok := v.([]any); ok {
+						items := make([]map[string]any, 0, len(arr))
+						for _, it := range arr {
+							if obj, ok := it.(map[string]any); ok {
+								items = append(items, obj)
+							}
+						}
+						inputs[k] = items
+					}
+				}
+			}
+			if err := mgr.Enqueue(id, inputs); err != nil {
+				sendError(c, http.StatusBadRequest, err.Error())
+				return
+			}
+			sendSuccess(c, map[string]any{"enqueued": true})
+			return
+		}
+		sendError(c, http.StatusBadRequest, "missing data field: expected {data: {...}}")
+	})
 
 	return r
 }

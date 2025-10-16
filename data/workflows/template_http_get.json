@@ -1,0 +1,26 @@
+{
+  "workflow": {
+    "id": "tmpl_http_get",
+    "name": "Template: HTTP GET",
+    "active": true,
+    "nodes": [
+      {
+        "id": "fetch",
+        "name": "Fetch Todo",
+        "type": "http:get",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "url": "https://jsonplaceholder.typicode.com/todos/{{.todo_id}}",
+          "timeout": 10
+        }
+      }
+    ],
+    "connections": {},
+    "settings": {}
+  },
+  "data": {
+    "fetch": [ { "todo_id": 1 } ]
+  }
+}
+

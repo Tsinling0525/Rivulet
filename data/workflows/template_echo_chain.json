@@ -1,0 +1,33 @@
+{
+  "workflow": {
+    "id": "tmpl_echo_chain",
+    "name": "Template: Echo Chain",
+    "active": true,
+    "nodes": [
+      {
+        "id": "echo1",
+        "name": "Echo One",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": { "label": "start" }
+      },
+      {
+        "id": "echo2",
+        "name": "Echo Two",
+        "type": "echo",
+        "typeVersion": 1.0,
+        "position": [300, 100],
+        "parameters": { "label": "next" }
+      }
+    ],
+    "connections": {
+      "echo1": { "main": [[[{ "node": "echo2", "type": "main", "index": 0 }]]] }
+    },
+    "settings": {}
+  },
+  "data": {
+    "echo1": [ { "message": "hello", "user": "demo" } ]
+  }
+}
+

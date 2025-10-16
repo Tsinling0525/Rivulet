@@ -1,0 +1,39 @@
+{
+  "workflow": {
+    "id": "tmpl_http_to_ollama",
+    "name": "Template: HTTP -> Ollama Summarize",
+    "active": true,
+    "nodes": [
+      {
+        "id": "fetch",
+        "name": "Fetch Article",
+        "type": "http:get",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "url": "https://jsonplaceholder.typicode.com/posts/{{.post_id}}",
+          "timeout": 15
+        }
+      },
+      {
+        "id": "summarize",
+        "name": "Summarize with Ollama",
+        "type": "ollama",
+        "typeVersion": 1.0,
+        "position": [360, 100],
+        "parameters": {
+          "model": "llama3.1",
+          "prompt": "Summarize the following JSON body in one sentence: {{.body}}"
+        }
+      }
+    ],
+    "connections": {
+      "fetch": { "main": [[[{ "node": "summarize", "type": "main", "index": 0 }]]] }
+    },
+    "settings": {}
+  },
+  "data": {
+    "fetch": [ { "post_id": 1 } ]
+  }
+}
+

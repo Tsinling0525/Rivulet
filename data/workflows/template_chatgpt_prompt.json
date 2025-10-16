@@ -1,0 +1,27 @@
+{
+  "workflow": {
+    "id": "tmpl_chatgpt_prompt",
+    "name": "Template: ChatGPT Transform",
+    "active": true,
+    "nodes": [
+      {
+        "id": "gpt",
+        "name": "ChatGPT",
+        "type": "chatgpt",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "model": "gpt-3.5-turbo",
+          "prompt": "Rewrite as a friendly tweet: {{.text}}",
+          "temperature": 0.7
+        }
+      }
+    ],
+    "connections": {},
+    "settings": {}
+  },
+  "data": {
+    "gpt": [ { "text": "Rivulet makes small, composable workflows a breeze." } ]
+  }
+}
+
