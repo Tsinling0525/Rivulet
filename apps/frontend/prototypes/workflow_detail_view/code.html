@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<link crossorigin="" href="https://fonts.gstatic.com/" rel="preconnect"/>
+<link as="style" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Inter%3Awght%40400%3B500%3B700%3B900" onload="this.rel='stylesheet'" rel="stylesheet"/>
+<title>Stitch Design</title>
+<link href="data:image/x-icon;base64," rel="icon" type="image/x-icon"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#137fec",
+              "background-light": "#f6f7f8",
+              "background-dark": "#101922",
+            },
+            fontFamily: {
+              display: ["Inter"],
+            },
+            borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
+          },
+        },
+      };
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+<div class="flex h-screen w-full flex-col">
+<header class="flex items-center justify-between border-b border-white/10 dark:border-white/10 bg-background-light dark:bg-background-dark px-10 py-3">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-3 text-white">
+<svg class="text-primary size-8" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M39.5563 34.1455V13.8546C39.5563 15.708 36.8773 17.3437 32.7927 18.3189C30.2914 18.916 27.263 19.2655 24 19.2655C20.737 19.2655 17.7086 18.916 15.2073 18.3189C11.1227 17.3437 8.44365 15.708 8.44365 13.8546V34.1455C8.44365 35.9988 11.1227 37.6346 15.2073 38.6098C17.7086 39.2069 20.737 39.5564 24 39.5564C27.263 39.5564 30.2914 39.2069 32.7927 38.6098C36.8773 37.6346 39.5563 35.9988 39.5563 34.1455Z" fill="currentColor"></path>
+<path clip-rule="evenodd" d="M10.4485 13.8519C10.4749 13.9271 10.6203 14.246 11.379 14.7361C12.298 15.3298 13.7492 15.9145 15.6717 16.3735C18.0007 16.9296 20.8712 17.2655 24 17.2655C27.1288 17.2655 29.9993 16.9296 32.3283 16.3735C34.2508 15.9145 35.702 15.3298 36.621 14.7361C37.3796 14.246 37.5251 13.9271 37.5515 13.8519C37.5287 13.7876 37.4333 13.5973 37.0635 13.2931C36.5266 12.8516 35.6288 12.3647 34.343 11.9175C31.79 11.0295 28.1333 10.4437 24 10.4437C19.8667 10.4437 16.2099 11.0295 13.657 11.9175C12.3712 12.3647 11.4734 12.8516 10.9365 13.2931C10.5667 13.5973 10.4713 13.7876 10.4485 13.8519ZM37.5563 18.7877C36.3176 19.3925 34.8502 19.8839 33.2571 20.2642C30.5836 20.9025 27.3973 21.2655 24 21.2655C20.6027 21.2655 17.4164 20.9025 14.7429 20.2642C13.1498 19.8839 11.6824 19.3925 10.4436 18.7877V34.1275C10.4515 34.1545 10.5427 34.4867 11.379 35.027C12.298 35.6207 13.7492 36.2054 15.6717 36.6644C18.0007 37.2205 20.8712 37.5564 24 37.5564C27.1288 37.5564 29.9993 37.2205 32.3283 36.6644C34.2508 36.2054 35.702 35.6207 36.621 35.027C37.4573 34.4867 37.5485 34.1546 37.5563 34.1275V18.7877ZM41.5563 13.8546V34.1455C41.5563 36.1078 40.158 37.5042 38.7915 38.3869C37.3498 39.3182 35.4192 40.0389 33.2571 40.5551C30.5836 41.1934 27.3973 41.5564 24 41.5564C20.6027 41.5564 17.4164 41.1934 14.7429 40.5551C12.5808 40.0389 10.6502 39.3182 9.20848 38.3869C7.84205 37.5042 6.44365 36.1078 6.44365 34.1455L6.44365 13.8546C6.44365 12.2684 7.37223 11.0454 8.39581 10.2036C9.43325 9.3505 10.8137 8.67141 12.343 8.13948C15.4203 7.06909 19.5418 6.44366 24 6.44366C28.4582 6.44366 32.5797 7.06909 35.657 8.13948C37.1863 8.67141 38.5667 9.3505 39.6042 10.2036C40.6278 11.0454 41.5563 12.2684 41.5563 13.8546Z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+<h2 class="text-xl font-bold text-black dark:text-white">FlowMaster</h2>
+</div>
+<nav class="flex items-center gap-6">
+<a class="text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary dark:hover:text-primary" href="#">Dashboard</a>
+<a class="text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary dark:hover:text-primary" href="#">Workflows</a>
+<a class="text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary dark:hover:text-primary" href="#">Templates</a>
+<a class="text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary dark:hover:text-primary" href="#">Reports</a>
+<a class="text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary dark:hover:text-primary" href="#">People</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"> search </span>
+<input class="form-input w-full rounded-lg border-0 bg-black/5 dark:bg-white/5 py-2 pl-10 text-sm text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40" placeholder="Search" value=""/>
+</div>
+<button class="flex size-9 items-center justify-center rounded-lg bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/10">
+<span class="material-symbols-outlined text-xl"> notifications </span>
+</button>
+<div class="size-9 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCieIc3ZQoUDU3wbOyNYgJugtQjxSxaGj6JxGKYDx6dc33jp04zPgcaxSvdUMPeOWw3lUJwG25xQVMWbsQ8mCnqBkgbYO0IhQyrtxciYDZrspOaiElXJ5tSRoKcSYtrL5B3-cFwEkD98xDXoisAFNx-xngvkMjh9f4sisK9XPoR6Kcwj3rZ5KL-vVweqXGCRpMhcQHGcMD1qV_F2SNPsffdzpNXc8lCBetggDt5eGDhurTHgUkvGWcmP98PLPj_KVu0blQRH5qa8jot");'></div>
+</div>
+</header>
+<main class="flex flex-1 overflow-hidden">
+<aside class="w-80 flex-shrink-0 border-r border-black/10 dark:border-white/10 bg-background-light dark:bg-background-dark p-6">
+<div class="border-b border-black/10 dark:border-white/10">
+<div class="flex gap-4">
+<a class="border-b-2 border-primary px-2 pb-3 text-sm font-bold text-primary" href="#">Details</a>
+<a class="border-b-2 border-transparent px-2 pb-3 text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary" href="#">Stages</a>
+<a class="border-b-2 border-transparent px-2 pb-3 text-sm font-medium text-black/60 dark:text-white/60 hover:text-primary" href="#">Team</a>
+</div>
+</div>
+<div class="space-y-4 pt-6">
+<h3 class="text-base font-semibold text-black dark:text-white">Workflow Details</h3>
+<div class="space-y-4">
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Workflow Name</p>
+<input class="form-input w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white" value="Client Onboarding"/>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Description</p>
+<textarea class="form-textarea w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white">Streamlined process for new client onboarding.</textarea>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Status</p>
+<select class="form-select w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white">
+<option>Active</option>
+<option>Inactive</option>
+</select>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Priority</p>
+<select class="form-select w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white">
+<option>High</option>
+<option>Medium</option>
+<option>Low</option>
+</select>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Category</p>
+<select class="form-select w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white">
+<option>Client Management</option>
+<option>Sales</option>
+</select>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Due Date</p>
+<input class="form-input w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white" type="date" value="2024-07-31"/>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Created By</p>
+<input class="form-input w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white" value="Admin"/>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Created At</p>
+<input class="form-input w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white" value="2024-06-01"/>
+</label>
+<label class="block">
+<p class="mb-1 text-xs font-medium text-black/60 dark:text-white/60">Last Updated</p>
+<input class="form-input w-full rounded border-black/10 dark:border-white/10 bg-transparent text-sm text-black dark:text-white" value="2024-06-15"/>
+</label>
+</div>
+</div>
+</aside>
+<section class="flex-1 overflow-y-auto p-8">
+<div class="flex items-center justify-between">
+<div>
+<h1 class="text-3xl font-bold text-black dark:text-white">Client Onboarding</h1>
+<p class="text-sm text-black/60 dark:text-white/60">Streamlined process for new client onboarding.</p>
+</div>
+<button class="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Edit Workflow</button>
+</div>
+<div class="mt-8">
+<h2 class="text-xl font-bold text-black dark:text-white">Stages</h2>
+<div class="mt-4 rounded-lg border border-black/10 dark:border-white/10 bg-background-light dark:bg-background-dark/50">
+<table class="w-full text-left text-sm">
+<thead>
+<tr class="border-b border-black/10 dark:border-white/10">
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Stage</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Tasks</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Status</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Assignee</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Due Date</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-black/10 dark:divide-white/10">
+<tr>
+<td class="p-4 font-medium text-black dark:text-white">Initial Contact</td>
+<td class="p-4 text-black/60 dark:text-white/60">3</td>
+<td class="p-4"><span class="rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Completed</span></td>
+<td class="p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCBE5i3bC5m28lxdahXaQgV2MXoyjnFcCEcpxIXDh3NcfG9y3lMjpHUYq3q7DS1Aofb9ZONDLizmHDH9FmyfBDFnYadQC1Xl3era7bMYXUrwnk0YQaYreLzyXisqvHywflnIcx4Q7D17HzjBJx7JoCbF92QIzvzxM2onTWaaZcRR7QyW-0hSEpt7F2GaHIVLr0fXKY-GKJHy5PcGYLyHptSp8C89syzynC8YuN1JGgZXLxO9jK0_Mhs_xOSQ2R1pN52yW6ibXGiL3Ii");'></div>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">2024-06-20</td>
+</tr>
+<tr>
+<td class="p-4 font-medium text-black dark:text-white">Proposal</td>
+<td class="p-4 text-black/60 dark:text-white/60">2</td>
+<td class="p-4"><span class="rounded bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400">In Progress</span></td>
+<td class="p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBNZRofS1N6etgdNBG0B6CyXXDBR7BQZsMtPgA-1-dAf9fvmj0GumflLqBjWoZ75g9FoZYpJ1nY_SC99g-7mLClix6sRIsjpPDxgMNB1a-jVU1J6TXrkW2eiqh3i3voM9_wbTRA73z2ERcyTqU5g7eXwApCcPSPonE6pLP4LVwQKtxBTtTr3GHl4wvRR3LJ-BTjqGPbeIHSxVAOMP0Eea-Fov4So_YO6_5sqhb73rEuWERM1h5-9iVM5CxhIis-MMFV0GImfe3jb9Ci");'></div>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">2024-06-25</td>
+</tr>
+<tr>
+<td class="p-4 font-medium text-black dark:text-white">Contract Signing</td>
+<td class="p-4 text-black/60 dark:text-white/60">1</td>
+<td class="p-4"><span class="rounded bg-gray-500/20 px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-400">Not Started</span></td>
+<td class="p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCKEFz7WxeK3I2KdTvNY7pQFcFsvA3OBtOnmqkAKMTclqepCl3biuz0mfsCzi5w9Tq8EB9ZxmEB8XfQ_Zv2sXLo4vtVziDX56ZjQMMTARN_UOcJ3In3PW4yg8vYfR2VHcc35lifWeVjNDPYuazMEGUt0Q7N4TZy-JhRXOZJYdlTIJbkAh4dp1jo1-Oo2ErOUj7wMR7Z60a1kGlbBybJI_jK85AIAhreaovw84tLW5L9B2kb2QIonm9rLAXFbzUHK5ryOjI-V_gCST8c");'></div>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">2024-07-01</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="mt-8">
+<h2 class="text-xl font-bold text-black dark:text-white">Team Members</h2>
+<div class="mt-4 rounded-lg border border-black/10 dark:border-white/10 bg-background-light dark:bg-background-dark/50">
+<table class="w-full text-left text-sm">
+<thead>
+<tr class="border-b border-black/10 dark:border-white/10">
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Name</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Role</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Email</th>
+<th class="p-4 font-medium text-black/80 dark:text-white/80">Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-black/10 dark:divide-white/10">
+<tr>
+<td class="flex items-center gap-3 p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCTUPJmEC2UPrbO86onbaNvjpY1QTQnsl-gLdSbLmhq65um1VMBINGkcg8kHyfqUN5NsErjMgriPNlufcqsStxuEVjohqm0tLQn0zv7gfO-uts81exSas_Ogav1nRssU0-nDRP-gbYlmOfCi2GopSwqncNnkHqREMaFb046YR9cug3mM1o0LHI8z4bQK5GZJueegVcNGU7v8lPnL5IAWySPcZfvmyZNb_3JAjTHUtEDy47wKao2wseG-OyZQAZyPtqXKz-vIeRwacaj");'></div>
+<span class="font-medium text-black dark:text-white">Ethan Bennett</span>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">Project Manager</td>
+<td class="p-4 text-black/60 dark:text-white/60">ethan.bennett@email.com</td>
+<td class="p-4"><span class="rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Active</span></td>
+</tr>
+<tr>
+<td class="flex items-center gap-3 p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBMQgfwDgk2qfaSVkUaUBkmexnFoW0qNBFzCRrn9S1MuYy69nKu_n0MeRa20QN6IVFcCb2kgH-ZrcvvVJjcUc2RBcKG7ORbjZyJO6Pir_kpvQpX0hqk-wweqT4p851NQ_TSSt26irvY6t5u5IF0gSNgBKdD9iTmaXy7EVn6KUM3gZ8P_hxL-UlujEsVYMkn0rSMQQOypR5gf-wHMqgFOViXKSl_ZiRlaLCDYGUFJ6mJJPlSF4C746k5WftmA6LJcMNopo9kJHSm1IUI");'></div>
+<span class="font-medium text-black dark:text-white">Olivia Hayes</span>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">Lead Designer</td>
+<td class="p-4 text-black/60 dark:text-white/60">olivia.hayes@email.com</td>
+<td class="p-4"><span class="rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Active</span></td>
+</tr>
+<tr>
+<td class="flex items-center gap-3 p-4">
+<div class="size-8 rounded-full bg-cover bg-center" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuA0Kv4q9fiECwkZCE-crbkjijTa5BiY_P1DRReT513YWYDdJyPN_qGNGIM8YD6EIqcVdt3YguzyUkWXI88BxPs3qAer0Ipu52ploHES7LoDH16gZGRROPsgOWFeXUb8yUPmJo4wEDGOeJtV0JQNOtIKY6p-JlD-HL2kQV-nc438dAFyWRYceDqTTYYq-dKCceeDrdt-d8RaDKmdFnBRYNZ7Dgv3BGXcddsoZjMIgj40PDrKrcrdpe2aPjNp5sed7zMNZksDMrhz5JzA");'></div>
+<span class="font-medium text-black dark:text-white">Liam Walker</span>
+</td>
+<td class="p-4 text-black/60 dark:text-white/60">Developer</td>
+<td class="p-4 text-black/60 dark:text-white/60">liam.walker@email.com</td>
+<td class="p-4"><span class="rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">Active</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</main>
+</div>
+
+</body></html>

@@ -1,27 +1,29 @@
 BINARY ?= rivulet
-PKG := ./...
+BACKEND := ./apps/backend
+PKG := $(BACKEND)/...
 
-.PHONY: run api test test-manual lint build
+.PHONY: run api test test-manual lint build daemon-build api-build
 
 run:
-	go run cmd/flowd/main.go
+	go run $(BACKEND)/cmd/rivulet server
 
 api:
-	go run cmd/api/main.go
+	go run $(BACKEND)/cmd/api
 
 test:
 	go test $(PKG) -race -count=1
 
 test-manual:
-	go run cmd/api/main.go test
+	go run $(BACKEND)/cmd/rivulet run --file data/workflows/n8n_workflow.json
 
 lint:
-	@golangci-lint run || echo "Install golangci-lint for linting"
+	@golangci-lint run ./apps/backend/... || echo "Install golangci-lint for linting"
 
 build:
-	go build -o bin/$(BINARY) cmd/flowd/main.go
+	go build -o bin/$(BINARY) $(BACKEND)/cmd/rivulet
+
+daemon-build:
+	go build -o bin/flowd $(BACKEND)/cmd/flowd
 
 api-build:
-	go build -o bin/rivulet-api cmd/api/main.go
-
-
+	go build -o bin/rivulet-api $(BACKEND)/cmd/api

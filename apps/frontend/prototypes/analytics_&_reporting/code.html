@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FlowTracker Dashboard</title>
+<link crossorigin="" href="https://fonts.gstatic.com/" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                        "foreground-light": "#111827",
+                        "foreground-dark": "#e5e7eb",
+                        "muted-light": "#6b7280",
+                        "muted-dark": "#9ca3af",
+                        "border-light": "#e5e7eb",
+                        "border-dark": "#374151",
+                        "card-light": "#ffffff",
+                        "card-dark": "#1f2937",
+                        "success": "#10b981",
+                        "danger": "#ef4444"
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "0.75rem",
+                        "xl": "1rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-foreground-light dark:text-foreground-dark">
+<div class="flex h-screen">
+<aside class="w-64 flex-shrink-0 bg-card-light dark:bg-card-dark p-4 flex flex-col justify-between border-r border-border-light dark:border-border-dark">
+<div>
+<div class="px-4 mb-8">
+<h1 class="text-2xl font-bold text-foreground-light dark:text-foreground-dark">FlowTracker</h1>
+</div>
+<nav class="space-y-2">
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg bg-primary/10 text-primary font-semibold" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">account_tree</span>
+<span>Workflows</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">task_alt</span>
+<span>Tasks</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">monitoring</span>
+<span>Reports</span>
+</a>
+</nav>
+</div>
+<div>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</aside>
+<main class="flex-1 p-8 overflow-y-auto">
+<header class="mb-8">
+<h1 class="text-3xl font-bold text-foreground-light dark:text-foreground-dark">Dashboard</h1>
+<p class="text-muted-light dark:text-muted-dark mt-1">Monitor workflow efficiency and team performance</p>
+</header>
+<section>
+<h2 class="text-xl font-semibold text-foreground-light dark:text-foreground-dark mb-4">Workflow Overview</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-card-light dark:bg-card-dark p-6 rounded-lg border border-border-light dark:border-border-dark">
+<p class="text-base font-medium text-muted-light dark:text-muted-dark">Workflow Completion Rate</p>
+<p class="text-4xl font-bold text-foreground-light dark:text-foreground-dark mt-2">85%</p>
+<div class="flex items-center gap-2 mt-1">
+<p class="text-sm text-muted-light dark:text-muted-dark">Last 30 Days</p>
+<p class="text-sm font-medium text-success flex items-center">
+<span class="material-symbols-outlined text-base">arrow_upward</span>
+<span>5%</span>
+</p>
+</div>
+<div class="mt-6 h-48">
+<svg fill="none" height="100%" preserveAspectRatio="none" viewBox="0 0 472 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient gradientUnits="userSpaceOnUse" id="gradient-area" x1="0" x2="0" y1="0" y2="150">
+<stop stop-color="#137fec" stop-opacity="0.2"></stop>
+<stop offset="1" stop-color="#137fec" stop-opacity="0"></stop>
+</linearGradient>
+</defs>
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V150H0V109Z" fill="url(#gradient-area)"></path>
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25" stroke="#137fec" stroke-linecap="round" stroke-width="3"></path>
+</svg>
+</div>
+</div>
+<div class="bg-card-light dark:bg-card-dark p-6 rounded-lg border border-border-light dark:border-border-dark">
+<p class="text-base font-medium text-muted-light dark:text-muted-dark">Task Distribution by Status</p>
+<p class="text-4xl font-bold text-foreground-light dark:text-foreground-dark mt-2">1200</p>
+<div class="flex items-center gap-2 mt-1">
+<p class="text-sm text-muted-light dark:text-muted-dark">Current Quarter</p>
+<p class="text-sm font-medium text-success flex items-center">
+<span class="material-symbols-outlined text-base">arrow_upward</span>
+<span>12%</span>
+</p>
+</div>
+<div class="mt-6 h-48 flex items-end gap-4">
+<div class="flex flex-col items-center flex-1">
+<div class="w-full bg-primary/20 dark:bg-primary/30 rounded-t-lg" style="height: 60%"></div>
+<p class="text-xs text-muted-light dark:text-muted-dark mt-2">To Do</p>
+</div>
+<div class="flex flex-col items-center flex-1">
+<div class="w-full bg-primary/20 dark:bg-primary/30 rounded-t-lg" style="height: 80%"></div>
+<p class="text-xs text-muted-light dark:text-muted-dark mt-2">In Progress</p>
+</div>
+<div class="flex flex-col items-center flex-1">
+<div class="w-full bg-primary/20 dark:bg-primary/30 rounded-t-lg" style="height: 35%"></div>
+<p class="text-xs text-muted-light dark:text-muted-dark mt-2">Completed</p>
+</div>
+<div class="flex flex-col items-center flex-1">
+<div class="w-full bg-primary/20 dark:bg-primary/30 rounded-t-lg" style="height: 20%"></div>
+<p class="text-xs text-muted-light dark:text-muted-dark mt-2">Blocked</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="mt-8">
+<h2 class="text-xl font-semibold text-foreground-light dark:text-foreground-dark mb-4">Team Performance</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-card-light dark:bg-card-dark p-6 rounded-lg border border-border-light dark:border-border-dark">
+<p class="text-base font-medium text-muted-light dark:text-muted-dark">Tasks Completed by Team Member</p>
+<p class="text-4xl font-bold text-foreground-light dark:text-foreground-dark mt-2">250</p>
+<div class="flex items-center gap-2 mt-1">
+<p class="text-sm text-muted-light dark:text-muted-dark">Last Month</p>
+<p class="text-sm font-medium text-success flex items-center">
+<span class="material-symbols-outlined text-base">arrow_upward</span>
+<span>10%</span>
+</p>
+</div>
+<div class="space-y-4 mt-6">
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Ethan</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 75%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Olivia</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 90%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Noah</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 60%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Ava</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 80%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Liam</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 65%"></div></div>
+</div>
+</div>
+</div>
+<div class="bg-card-light dark:bg-card-dark p-6 rounded-lg border border-border-light dark:border-border-dark">
+<p class="text-base font-medium text-muted-light dark:text-muted-dark">Average Task Completion Time</p>
+<p class="text-4xl font-bold text-foreground-light dark:text-foreground-dark mt-2">3 Days</p>
+<div class="flex items-center gap-2 mt-1">
+<p class="text-sm text-muted-light dark:text-muted-dark">Last Month</p>
+<p class="text-sm font-medium text-danger flex items-center">
+<span class="material-symbols-outlined text-base">arrow_downward</span>
+<span>-1 Day</span>
+</p>
+</div>
+<div class="space-y-4 mt-6">
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Ethan</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 40%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Olivia</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 25%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Noah</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 60%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Ava</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 30%"></div></div>
+</div>
+<div class="flex items-center gap-4">
+<p class="w-16 text-sm text-muted-light dark:text-muted-dark">Liam</p>
+<div class="flex-1 bg-primary/10 rounded-full h-2.5"><div class="bg-primary h-2.5 rounded-full" style="width: 50%"></div></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+
+</body></html>

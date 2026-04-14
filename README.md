@@ -16,12 +16,17 @@ A lightweight, n8n-inspired workflow engine written in Go. Rivulet provides a no
 
 ```
 Rivulet/
-├── cmd/flowd/          # Main workflow daemon
-├── engine/             # Core execution engine
-├── model/              # Data structures and types
-├── plugin/             # Plugin system interfaces
-├── nodes/              # Node implementations
-└── infra/              # Infrastructure components
+├── apps/
+│   ├── backend/        # Go services (daemon, API server, CLI)
+│   │   ├── cmd/        # Entrypoints: flowd/, api/, rivulet/
+│   │   ├── engine/     # Core execution engine
+│   │   ├── infra/      # Infrastructure components
+│   │   ├── model/      # Data structures and types
+│   │   ├── nodes/      # Built-in nodes
+│   │   └── plugin/     # Plugin system interfaces
+│   └── frontend/       # Static dashboard UI served by the API
+├── data/               # Example workflows, scripts, files
+└── go.work             # Go workspace definition
 ```
 
 ## 🎯 Quick Start
@@ -33,21 +38,21 @@ Rivulet/
 git clone https://github.com/Tsinling0525/rivulet.git
 cd rivulet
 
-# Build the project
-go build -o rivulet cmd/rivulet/main.go
+# Build the CLI
+make build
 ```
 
 ### 2. Start the API Server
 
 ```bash
 # Start server on default port 8080
-./rivulet server
+./bin/rivulet server
 
 # Or specify custom port
-RIV_API_PORT=3000 ./rivulet server
+RIV_API_PORT=3000 ./bin/rivulet server
 ```
 
-The server provides n8n-compatible workflow execution endpoints.
+The server provides n8n-compatible workflow execution endpoints and serves the dashboard UI at [http://localhost:8080/](http://localhost:8080/). The dashboard consumes the `/dashboard/metrics` API to visualise live workflow stats.
 
 ### 3. Run a Workflow from File
 
@@ -55,13 +60,16 @@ Try the included example workflows:
 
 ```bash
 # Run echo workflow
-./rivulet run --file data/workflows/n8n_workflow.json
+./bin/rivulet run --file data/workflows/n8n_workflow.json
 
 # Run Ollama AI workflow (requires Ollama installed)
-./rivulet run --file data/workflows/ollama_simple.json
+./bin/rivulet run --file data/workflows/ollama_simple.json
+
+# Run OpenAI chat workflow (requires OPENAI_API_KEY)
+./bin/rivulet run --file data/workflows/template_chatgpt_prompt.json
 
 # Run Python file processing workflow
-./rivulet run --file data/workflows/image_to_latex.json
+./bin/rivulet run --file data/workflows/image_to_latex.json
 ```
 
 ### 4. Execute via API
@@ -108,6 +116,7 @@ The `data/workflows/` directory contains example workflows:
 
 - **n8n_workflow.json** - Simple echo workflow with connections
 - **ollama_simple.json** - AI workflow using local Ollama LLM
+- **template_chatgpt_prompt.json** - AI workflow using the `chatgpt` node
 - **image_to_latex.json** - Python script workflow for file processing
 
 ### 7. Development Mode
@@ -115,14 +124,14 @@ The `data/workflows/` directory contains example workflows:
 For development with auto-restart:
 
 ```bash
-# Using go run for development
-go run cmd/rivulet/main.go server
+# Start the API + dashboard
+make run
 
 # Run tests
 make test
 
 # Run workflow once
-go run cmd/rivulet/main.go run --file data/workflows/n8n_workflow.json
+go run ./apps/backend/cmd/rivulet run --file data/workflows/n8n_workflow.json
 ```
 
 ### 8. Python File Processing
@@ -163,6 +172,27 @@ data/files/image_to_latex_workflow/
 ├── sample-image          # The actual file
 └── sample-image.json     # File metadata
 ```
+
+### 9. Dashboard Metrics
+
+- Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the FlowTracker dashboard powered by `apps/frontend/index.html`.
+- The UI is served directly by the Go API (configurable via `RIV_FRONTEND_DIR`) so the backend and frontend ship together in the monorepo.
+- The dashboard view calls `/dashboard/metrics`, which aggregates execution stats from `infra.InstanceManager`—success/fail counts, queue depth, and per-instance timings.
+- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, and `/instances/:id/enqueue` so you can create instances, enqueue sample data, and inspect the latest execution result from the browser.
+- Extend the cards by enhancing `infra.DashboardMetrics()` and updating the frontend HTML, or replace the static assets with a compiled SPA that targets the same endpoint.
+
+### 10. Current API Surface
+
+The API currently exposes:
+
+- `GET /health`
+- `POST /workflow/start` for one-shot execution of an n8n-style payload
+- `GET /workflows/files` to list workflow JSON files under `data/workflows`
+- `POST /instances`, `GET /instances`, `GET /instances/:id`
+- `POST /instances/:id/stop`, `GET /instances/:id/logs`, `POST /instances/:id/enqueue`
+- `GET /dashboard/metrics`
+
+There is no persisted workflow CRUD layer yet; instance management is currently in-memory.
 
 #### Python Script Example
 
@@ -206,8 +236,13 @@ if __name__ == "__main__":
 
 - `echo` – echoes a label into the item
 - `http:get` – fetch URL into `body` + `status` (templated URL)
+- `http:request` – send JSON or multipart HTTP requests with optional polling
+- `files:load` – load attached files into item fields
+- `fs:write` – write a field to disk
 - `logic:if` – routes to ports `true`/`false` based on template expression
 - `merge.concat` – pass-through node (engine performs fan-in)
+- `ollama` – render a prompt and call a local Ollama model
+- `chatgpt` – render a prompt and call the OpenAI Responses API by default, with legacy Chat Completions compatibility when explicitly configured
 - `python:script` – run local Python script over an attached file and put stdout (e.g., LaTeX) into item
 
 Python node config example:
@@ -380,30 +415,32 @@ The API server passes a `FileStore` to nodes so they can read/write files during
 
 ### Project Structure
 ```
-├── cmd/flowd/          # Main application
-├── engine/             # Workflow execution engine
-│   ├── executor.go     # Node execution logic
-│   └── scheduler.go    # Workflow scheduling
-├── model/              # Data models
-│   └── types.go        # Core types and interfaces
-├── plugin/             # Plugin system
-│   ├── node.go         # Node interfaces
-│   └── registry.go     # Plugin registry
-├── nodes/              # Built-in nodes
-│   └── echo/           # Example echo node
-└── infra/              # Infrastructure
-    └── state.go        # State management implementations
+├── apps/
+│   ├── backend/
+│   │   ├── cmd/flowd/      # Service-only entrypoint
+│   │   ├── cmd/api/        # HTTP API server
+│   │   ├── cmd/rivulet/    # CLI wrapper
+│   │   ├── engine/         # Workflow execution engine
+│   │   ├── infra/          # Infrastructure utilities
+│   │   ├── model/          # Data models and types
+│   │   ├── nodes/          # Built-in node handlers
+│   │   └── plugin/         # Plugin system interfaces/registry
+│   └── frontend/           # Static dashboard UI
+├── data/                   # Example workflows, scripts, files
+└── go.work                 # Go workspace definition
 ```
 
 ### Adding New Nodes
-1. Create a new package in `nodes/`
+1. Create a new package under `apps/backend/nodes/`
 2. Implement the `NodeHandler` interface
 3. Register the node in `init()`
 4. Add configuration options to `model.Node.Config`
 
 ### Building
 ```bash
-go build -o rivulet cmd/flowd/main.go
+make build        # build CLI into bin/rivulet
+make daemon-build # build service entrypoint into bin/flowd
+make api-build    # build API server into bin/rivulet-api
 ```
 
 ## 🎯 Use Cases

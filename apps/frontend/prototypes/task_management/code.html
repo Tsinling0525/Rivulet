@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<link crossorigin="" href="https://fonts.gstatic.com/" rel="preconnect"/>
+<link as="style" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Inter%3Awght%40400%3B500%3B700%3B900" onload="this.rel='stylesheet'" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#137fec",
+              "background-light": "#f6f7f8",
+              "background-dark": "#101922",
+            },
+            fontFamily: {
+              display: ["Inter"],
+            },
+            borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
+          },
+        },
+      };
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<title>TaskFlow</title>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark">
+<div class="flex flex-col min-h-screen">
+<header class="bg-background-light dark:bg-background-dark border-b border-primary/20 dark:border-primary/30 sticky top-0 z-20">
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+<div class="flex h-16 items-center justify-between">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-2 text-gray-800 dark:text-white">
+<svg class="h-8 w-8 text-primary" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M13.8261 30.5736C16.7203 29.8826 20.2244 29.4783 24 29.4783C27.7756 29.4783 31.2797 29.8826 34.1739 30.5736C36.9144 31.2278 39.9967 32.7669 41.3563 33.8352L24.8486 7.36089C24.4571 6.73303 23.5429 6.73303 23.1514 7.36089L6.64374 33.8352C8.00331 32.7669 11.0856 31.2278 13.8261 30.5736Z" fill="currentColor"></path>
+<path clip-rule="evenodd" d="M39.998 35.764C39.9944 35.7463 39.9875 35.7155 39.9748 35.6706C39.9436 35.5601 39.8949 35.4259 39.8346 35.2825C39.8168 35.2403 39.7989 35.1993 39.7813 35.1602C38.5103 34.2887 35.9788 33.0607 33.7095 32.5189C30.9875 31.8691 27.6413 31.4783 24 31.4783C20.3587 31.4783 17.0125 31.8691 14.2905 32.5189C12.0012 33.0654 9.44505 34.3104 8.18538 35.1832C8.17384 35.2075 8.16216 35.233 8.15052 35.2592C8.09919 35.3751 8.05721 35.4886 8.02977 35.589C8.00356 35.6848 8.00039 35.7333 8.00004 35.7388C8.00004 35.739 8 35.7393 8.00004 35.7388C8.00004 35.7641 8.0104 36.0767 8.68485 36.6314C9.34546 37.1746 10.4222 37.7531 11.9291 38.2772C14.9242 39.319 19.1919 40 24 40C28.8081 40 33.0758 39.319 36.0709 38.2772C37.5778 37.7531 38.6545 37.1746 39.3151 36.6314C39.9006 36.1499 39.9857 35.8511 39.998 35.764ZM4.95178 32.7688L21.4543 6.30267C22.6288 4.4191 25.3712 4.41909 26.5457 6.30267L43.0534 32.777C43.0709 32.8052 43.0878 32.8338 43.104 32.8629L41.3563 33.8352C43.104 32.8629 43.1038 32.8626 43.104 32.8629L43.1051 32.865L43.1065 32.8675L43.1101 32.8739L43.1199 32.8918C43.1276 32.906 43.1377 32.9246 43.1497 32.9473C43.1738 32.9925 43.2062 33.0545 43.244 33.1299C43.319 33.2792 43.4196 33.489 43.5217 33.7317C43.6901 34.1321 44 34.9311 44 35.7391C44 37.4427 43.003 38.7775 41.8558 39.7209C40.6947 40.6757 39.1354 41.4464 37.385 42.0552C33.8654 43.2794 29.133 44 24 44C18.867 44 14.1346 43.2794 10.615 42.0552C8.86463 41.4464 7.30529 40.6757 6.14419 39.7209C4.99695 38.7775 3.99999 37.4427 3.99999 35.7391C3.99999 34.8725 4.29264 34.0922 4.49321 33.6393C4.60375 33.3898 4.71348 33.1804 4.79687 33.0311C4.83898 32.9556 4.87547 32.8935 4.9035 32.8471C4.91754 32.8238 4.92954 32.8043 4.93916 32.7889L4.94662 32.777L4.95178 32.7688ZM35.9868 29.004L24 9.77997L12.0131 29.004C12.4661 28.8609 12.9179 28.7342 13.3617 28.6282C16.4281 27.8961 20.0901 27.4783 24 27.4783C27.9099 27.4783 31.5719 27.8961 34.6383 28.6282C35.082 28.7342 35.5339 28.8609 35.9868 29.004Z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+<h1 class="text-xl font-bold">TaskFlow</h1>
+</div>
+<nav class="hidden md:flex items-center gap-2">
+<a class="rounded-lg px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20" href="#">Dashboard</a>
+<a class="rounded-lg px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20" href="#">Workflows</a>
+<a class="bg-primary/10 dark:bg-primary/20 text-primary rounded-lg px-3 py-2 text-sm font-medium" href="#">Tasks</a>
+<a class="rounded-lg px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20" href="#">Reports</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 rounded-full p-2">
+<span class="material-symbols-outlined"> search </span>
+</button>
+<button class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 rounded-full p-2">
+<span class="material-symbols-outlined"> notifications </span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full h-8 w-8" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuA6SHD8wM9GEq5kFoM1sjgpAeJpYYbg6AHVnRWPoST0oSvBy9KkE8-al-bjIhC2ZwczCc_21qj-pJcGcXsJo_5h2BJfZwf-spWx-iMo3CINxgKI_jXNwew_yq9FotI4Wkhwn3S1okMkz8nvrf8f1z57KnQ7NoUZLR5_lddDnCLNSQlS7ub_o1NxpBOkLr-lGj43wfji0wWMZvRVVZ-R38MgcQOqaDLJi53HNzcFvnG4vU0om3mWrrYrt3ejVqGPzjeon_IIHTCnG4LQ");'></div>
+</div>
+</div>
+</div>
+</header>
+<main class="flex-1">
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+<div class="mb-8">
+<h2 class="text-3xl font-bold text-gray-800 dark:text-white">Tasks</h2>
+<p class="text-gray-500 dark:text-gray-400 mt-1">Manage and track all tasks within your workflows.</p>
+</div>
+<div class="space-y-6">
+<div class="flex flex-col md:flex-row gap-4 items-center">
+<div class="relative flex-1 w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"> search </span>
+<input class="w-full pl-10 pr-4 py-2 rounded-lg border border-primary/20 dark:border-primary/30 bg-background-light dark:bg-background-dark focus:ring-2 focus:ring-primary focus:outline-none text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500" placeholder="Search tasks..." type="text"/>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium bg-background-light dark:bg-background-dark border border-primary/20 dark:border-primary/30 text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20">
+<span>Status</span>
+<span class="material-symbols-outlined text-base"> expand_more </span>
+</button>
+<button class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium bg-background-light dark:bg-background-dark border border-primary/20 dark:border-primary/30 text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20">
+<span>Assignee</span>
+<span class="material-symbols-outlined text-base"> expand_more </span>
+</button>
+<button class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium bg-background-light dark:bg-background-dark border border-primary/20 dark:border-primary/30 text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/20">
+<span>Due Date</span>
+<span class="material-symbols-outlined text-base"> expand_more </span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto rounded-lg border border-primary/20 dark:border-primary/30 bg-background-light dark:bg-background-dark">
+<table class="w-full text-sm text-left">
+<thead class="text-xs text-gray-700 dark:text-gray-300 uppercase bg-primary/5 dark:bg-primary/10">
+<tr>
+<th class="px-6 py-3" scope="col">Task</th>
+<th class="px-6 py-3" scope="col">Workflow</th>
+<th class="px-6 py-3" scope="col">Status</th>
+<th class="px-6 py-3" scope="col">Assignee</th>
+<th class="px-6 py-3" scope="col">Due Date</th>
+<th class="px-6 py-3" scope="col">Priority</th>
+</tr>
+</thead>
+<tbody class="text-gray-800 dark:text-gray-200">
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Review Marketing Campaign</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Q4 Campaign Planning</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">In Progress</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Sarah Chen</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-08-15</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">High</span>
+</td>
+</tr>
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Update Website Content</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Website Redesign</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Completed</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">David Lee</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-07-20</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">Medium</span>
+</td>
+</tr>
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Prepare Sales Presentation</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Sales Enablement</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Pending</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Emily Wong</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-08-22</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">High</span>
+</td>
+</tr>
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Analyze Customer Feedback</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Product Development</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">In Progress</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Michael Tan</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-08-10</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">Medium</span>
+</td>
+</tr>
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Schedule Team Meeting</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Project Kickoff</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Completed</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Jessica Lim</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-07-25</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-300">Low</span>
+</td>
+</tr>
+<tr class="border-b border-primary/20 dark:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Draft Blog Post</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Content Marketing</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Pending</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Sarah Chen</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-08-29</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">Medium</span>
+</td>
+</tr>
+<tr class="hover:bg-primary/5 dark:hover:bg-primary/10">
+<td class="px-6 py-4 font-medium">Design New Logo</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">Branding Refresh</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">In Progress</span>
+</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">David Lee</td>
+<td class="px-6 py-4 text-gray-500 dark:text-gray-400">2024-08-05</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">High</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>
