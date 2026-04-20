@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Tsinling0525/rivulet/engine"
 	"github.com/Tsinling0525/rivulet/model"
 	"github.com/Tsinling0525/rivulet/plugin"
 )
@@ -63,6 +64,17 @@ func (g *Gate) Process(ctx context.Context, wf model.Workflow, node model.Node, 
 			next["review_status"] = review.Status
 			next["review_required"] = true
 			out = append(out, next)
+			continue
+		}
+		next := cloneReviewItem(item)
+		next["review_id"] = review.ID
+		next["review_status"] = review.Status
+		next["review_required"] = true
+		return nil, &engine.PausedError{
+			ReviewID: review.ID,
+			NodeID:   node.ID,
+			NodeName: node.Name,
+			Output:   model.Items{next},
 		}
 	}
 	return out, nil

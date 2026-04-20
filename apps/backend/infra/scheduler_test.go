@@ -18,6 +18,7 @@ func TestScheduleRunnerPersistsScheduledRun(t *testing.T) {
 	workflows := &WorkflowStore{dir: filepath.Join(root, "workflows")}
 	runs := &RunStore{dir: filepath.Join(root, "runs")}
 	schedules := &ScheduleStore{dir: filepath.Join(root, "schedules")}
+	checkpoints := &CheckpointStore{dir: filepath.Join(root, "checkpoints")}
 
 	req := n8n.N8nRequest{
 		Workflow: n8n.N8nWorkflow{
@@ -44,7 +45,7 @@ func TestScheduleRunnerPersistsScheduledRun(t *testing.T) {
 	}
 
 	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: NewLocalFiles()}
-	runner := NewScheduleRunner(deps, workflows, runs, schedules)
+	runner := NewScheduleRunner(deps, workflows, runs, schedules, checkpoints)
 	runner.runSchedule(context.Background(), schedule)
 
 	persistedRuns, err := runs.List("wf-scheduled", 10)

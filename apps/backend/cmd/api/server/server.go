@@ -57,7 +57,7 @@ func handleHealth(c *gin.Context) {
 	sendSuccess(c, map[string]interface{}{"status": "healthy", "timestamp": time.Now().Unix(), "version": "1.0.0"})
 }
 
-func handleStartWorkflow(deps plugin.Deps, runs *infra.RunStore) gin.HandlerFunc {
+func handleStartWorkflow(deps plugin.Deps, runs *infra.RunStore, checkpoints *infra.CheckpointStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req APIRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -68,8 +68,13 @@ func handleStartWorkflow(deps plugin.Deps, runs *infra.RunStore) gin.HandlerFunc
 			WorkflowRequest: req,
 			Source:          "ad_hoc",
 			Trigger:         "api_start",
+			Checkpoints:     checkpoints,
 		})
 		if err != nil {
+			if outcome.Run.Status == "paused" {
+				sendSuccess(c, map[string]interface{}{"executionId": outcome.Run.ID, "result": outcome.Result, "run": outcome.Run})
+				return
+			}
 			sendError(c, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -230,7 +235,8 @@ func NewRouter() *gin.Engine {
 	workflows := infra.NewWorkflowStore()
 	runs := infra.NewRunStore()
 	schedules := infra.NewScheduleStore()
-	scheduleRunner := infra.NewScheduleRunner(baseDeps, workflows, runs, schedules)
+	checkpoints := infra.NewCheckpointStore()
+	scheduleRunner := infra.NewScheduleRunner(baseDeps, workflows, runs, schedules, checkpoints)
 	scheduleRunner.Start(context.Background(), time.Second)
 	r := gin.Default()
 	r.Use(gin.Logger())
@@ -249,7 +255,7 @@ func NewRouter() *gin.Engine {
 
 	// Routes (start-only API)
 	r.GET("/health", handleHealth)
-	r.POST("/workflow/start", handleStartWorkflow(baseDeps, runs))
+	r.POST("/workflow/start", handleStartWorkflow(baseDeps, runs, checkpoints))
 	r.GET("/workflows/files", func(c *gin.Context) {
 		workflows, err := listWorkflowFiles()
 		if err != nil {
@@ -567,7 +573,22 @@ func NewRouter() *gin.Engine {
 			sendError(c, status, err.Error())
 			return
 		}
-		sendSuccess(c, map[string]any{"review": review})
+		resp := map[string]any{"review": review}
+		checkpoint, err := checkpoints.FindActiveByReviewID(review.ID)
+		if err == nil {
+			outcome, resumeErr := infra.ResumeCheckpoint(c.Request.Context(), baseDeps, runs, checkpoints, checkpoint.ID)
+			if resumeErr != nil && outcome.Run.Status != "paused" {
+				sendError(c, http.StatusInternalServerError, resumeErr.Error())
+				return
+			}
+			resp["run"] = outcome.Run
+			resp["result"] = outcome.Result
+			resp["resumed"] = outcome.Run.Status != "paused"
+		} else if err != infra.ErrCheckpointNotFound {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		sendSuccess(c, resp)
 	})
 
 	r.POST("/reviews/:id/reject", func(c *gin.Context) {
@@ -588,11 +609,25 @@ func NewRouter() *gin.Engine {
 			sendError(c, status, err.Error())
 			return
 		}
-		sendSuccess(c, map[string]any{"review": review})
+		resp := map[string]any{"review": review}
+		checkpoint, err := checkpoints.FindActiveByReviewID(review.ID)
+		if err == nil {
+			_, _ = checkpoints.MarkRejected(checkpoint.ID)
+			run, cancelErr := runs.MarkCancelled(checkpoint.RunID, "review rejected")
+			if cancelErr != nil {
+				sendError(c, http.StatusInternalServerError, cancelErr.Error())
+				return
+			}
+			resp["run"] = run
+		} else if err != infra.ErrCheckpointNotFound {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		sendSuccess(c, resp)
 	})
 
 	// Instance Manager
-	mgr := infra.NewInstanceManager(workflows, runs)
+	mgr := infra.NewInstanceManager(workflows, runs, checkpoints)
 
 	frontendDir := infra.FrontendDir()
 	if stat, err := os.Stat(frontendDir); err == nil && stat.IsDir() {

@@ -1112,6 +1112,8 @@
       function runStatusClass(status) {
         if (status === "succeeded") return "success";
         if (status === "failed") return "danger";
+        if (status === "cancelled") return "danger";
+        if (status === "paused") return "warning";
         if (status === "running") return "warning";
         return "";
       }
@@ -1158,6 +1160,11 @@
                         : ""
                     }
                     <div class="meta">Started ${escapeHTML(startedAt)}</div>
+                    ${
+                      run.review_id
+                        ? `<div class="meta">Review: ${escapeHTML(run.review_id)}${run.checkpoint_id ? ` · Checkpoint: ${escapeHTML(run.checkpoint_id)}` : ""}</div>`
+                        : ""
+                    }
                     <div class="meta">${escapeHTML(String(run.duration_ms ?? 0))} ms · ${eventCount} event${eventCount === 1 ? "" : "s"}</div>
                     ${
                       run.error
@@ -1358,7 +1365,7 @@
             <div class="stack">
               <span class="status-pill ${reviewStatusClass(review.status)}">${escapeHTML(review.status || "pending")}</span>
               <div class="button-row">
-                <button type="button" class="secondary" data-approve-review="${escapeHTML(review.id)}">Approve</button>
+                <button type="button" class="secondary" data-approve-review="${escapeHTML(review.id)}">Approve & Resume</button>
                 <button type="button" class="danger" data-reject-review="${escapeHTML(review.id)}">Reject</button>
               </div>
             </div>
@@ -1518,6 +1525,8 @@
                 status: lastExecution.status || null,
                 workflow_id: lastExecution.workflow_id || null,
                 workflow_version: lastExecution.workflow_version || null,
+                review_id: lastExecution.review_id || null,
+                checkpoint_id: lastExecution.checkpoint_id || null,
                 started_at: lastExecution.started_at || null,
                 finished_at: lastExecution.finished_at || null,
                 duration_ms: lastExecution.duration_ms ?? 0,
@@ -1766,7 +1775,7 @@
           method: "POST",
           body: JSON.stringify({ reviewer: "dashboard" }),
         });
-        await fetchReviews();
+        await Promise.all([fetchReviews(), fetchInstances(), fetchMetrics()]);
       }
 
       async function rejectReview(id) {
@@ -1774,7 +1783,7 @@
           method: "POST",
           body: JSON.stringify({ reviewer: "dashboard" }),
         });
-        await fetchReviews();
+        await Promise.all([fetchReviews(), fetchInstances(), fetchMetrics()]);
       }
 
       async function replayRun(runId) {

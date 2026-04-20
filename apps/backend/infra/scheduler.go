@@ -8,20 +8,22 @@ import (
 )
 
 type ScheduleRunner struct {
-	deps      plugin.Deps
-	workflows *WorkflowStore
-	runs      *RunStore
-	schedules *ScheduleStore
-	limit     int
+	deps        plugin.Deps
+	workflows   *WorkflowStore
+	runs        *RunStore
+	schedules   *ScheduleStore
+	checkpoints *CheckpointStore
+	limit       int
 }
 
-func NewScheduleRunner(deps plugin.Deps, workflows *WorkflowStore, runs *RunStore, schedules *ScheduleStore) *ScheduleRunner {
+func NewScheduleRunner(deps plugin.Deps, workflows *WorkflowStore, runs *RunStore, schedules *ScheduleStore, checkpoints *CheckpointStore) *ScheduleRunner {
 	return &ScheduleRunner{
-		deps:      deps,
-		workflows: workflows,
-		runs:      runs,
-		schedules: schedules,
-		limit:     32,
+		deps:        deps,
+		workflows:   workflows,
+		runs:        runs,
+		schedules:   schedules,
+		checkpoints: checkpoints,
+		limit:       32,
 	}
 }
 
@@ -76,6 +78,7 @@ func (r *ScheduleRunner) runSchedule(ctx context.Context, schedule Schedule) {
 		Source:          "schedule",
 		Trigger:         "schedule",
 		ScheduleID:      schedule.ID,
+		Checkpoints:     r.checkpoints,
 	})
 	_, _ = r.schedules.CompleteRun(schedule.ID, outcome.Run, err)
 }

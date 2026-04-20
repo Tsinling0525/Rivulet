@@ -2,8 +2,10 @@ package review
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/Tsinling0525/rivulet/engine"
 	"github.com/Tsinling0525/rivulet/infra"
 	apiinfra "github.com/Tsinling0525/rivulet/infra/api"
 	"github.com/Tsinling0525/rivulet/model"
@@ -31,11 +33,15 @@ func TestGateCreatesPendingReviewAndStopsByDefault(t *testing.T) {
 			"context_fields": []any{"prompt"},
 		},
 	}, model.Items{{"prompt": "draft a reply", "draft": "hello"}})
-	if err != nil {
-		t.Fatalf("Process returned error: %v", err)
+	var paused *engine.PausedError
+	if !errors.As(err, &paused) {
+		t.Fatalf("expected paused error, got %v", err)
 	}
 	if len(out) != 0 {
-		t.Fatalf("expected default gate to stop output, got %d items", len(out))
+		t.Fatalf("expected returned output to be empty on pause, got %d items", len(out))
+	}
+	if paused.ReviewID == "" || len(paused.Output) != 1 {
+		t.Fatalf("expected pause metadata with review id and resume output, got %+v", paused)
 	}
 
 	reviews, err := store.List(context.Background(), model.ReviewPending)

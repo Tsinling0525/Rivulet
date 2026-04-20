@@ -82,6 +82,8 @@ type ExecutionRecord struct {
 	Source          string                    `json:"source,omitempty"`
 	Trigger         string                    `json:"trigger,omitempty"`
 	ScheduleID      string                    `json:"schedule_id,omitempty"`
+	ReviewID        string                    `json:"review_id,omitempty"`
+	CheckpointID    string                    `json:"checkpoint_id,omitempty"`
 	StartedAt       time.Time                 `json:"started_at"`
 	FinishedAt      time.Time                 `json:"finished_at"`
 	DurationMS      int64                     `json:"duration_ms"`
@@ -129,22 +131,24 @@ func (i *Instance) Snapshot() InstanceSnapshot {
 }
 
 type InstanceManager struct {
-	mu        sync.Mutex
-	items     map[string]*Instance
-	deps      plugin.Deps
-	workflows *WorkflowStore
-	runs      *RunStore
-	newID     func() string
+	mu          sync.Mutex
+	items       map[string]*Instance
+	deps        plugin.Deps
+	workflows   *WorkflowStore
+	runs        *RunStore
+	checkpoints *CheckpointStore
+	newID       func() string
 }
 
-func NewInstanceManager(workflows *WorkflowStore, runs *RunStore) *InstanceManager {
+func NewInstanceManager(workflows *WorkflowStore, runs *RunStore, checkpoints *CheckpointStore) *InstanceManager {
 	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: NewLocalFiles(), Reviews: NewReviewStore()}
 	return &InstanceManager{
-		items:     make(map[string]*Instance),
-		deps:      deps,
-		workflows: workflows,
-		runs:      runs,
-		newID:     func() string { return fmt.Sprintf("inst-%d", time.Now().UnixNano()) },
+		items:       make(map[string]*Instance),
+		deps:        deps,
+		workflows:   workflows,
+		runs:        runs,
+		checkpoints: checkpoints,
+		newID:       func() string { return fmt.Sprintf("inst-%d", time.Now().UnixNano()) },
 	}
 }
 
@@ -258,6 +262,7 @@ func (m *InstanceManager) createFromRequest(path, workflowID string, version int
 					Source:          "instance",
 					Trigger:         "instance_enqueue",
 					InstanceID:      inst.ID,
+					Checkpoints:     m.checkpoints,
 				})
 
 				inst.statsMu.Lock()
@@ -266,6 +271,11 @@ func (m *InstanceManager) createFromRequest(path, workflowID string, version int
 				inst.lastRun = executionRecordFromRun(outcome.Run)
 				inst.active = ActiveExecution{}
 				if err != nil {
+					if outcome.Run.Status == "paused" {
+						inst.statsMu.Unlock()
+						inst.logf("execution %s paused for review: %s", execID, outcome.Run.ReviewID)
+						continue
+					}
 					inst.stats.FailedExecutions++
 					inst.statsMu.Unlock()
 					inst.logf("execution %s error: %v", execID, err)
@@ -348,6 +358,8 @@ func executionRecordFromRun(run RunRecord) ExecutionRecord {
 		Source:          run.Source,
 		Trigger:         run.Trigger,
 		ScheduleID:      run.ScheduleID,
+		ReviewID:        run.ReviewID,
+		CheckpointID:    run.CheckpointID,
 		StartedAt:       run.StartedAt,
 		FinishedAt:      run.FinishedAt,
 		DurationMS:      run.DurationMS,

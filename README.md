@@ -10,7 +10,7 @@ Rivulet treats AI workflows as a first-class workflow kind, not just generic aut
 - **Plugin Architecture** - Extensible node system for custom functionality
 - **AI Workflow Identity** - First-class AI metadata for purpose, models, risk, and review policy
 - **AI Observability** - Model-call events capture provider/model, prompt hash, tokens, latency, and status
-- **Human Review Gates** - `review:gate` nodes create auditable approve/reject requests for AI outputs
+- **Human Review Gates** - `review:gate` nodes pause AI workflows for auditable approve/resume or reject decisions
 - **State Management** - Persistent node state across workflow executions
 - **Event-driven** - Observable execution flow with event bus
 - **Type-safe** - Strong typing with Go's type system
@@ -144,7 +144,7 @@ AI workflows can declare intent and review policy directly on the workflow:
 }
 ```
 
-To create an explicit human review step, add a `review:gate` node after an AI node. By default it records a pending review and emits no downstream output, making it a terminal approval checkpoint. Set `pass_through: true` only when you want downstream nodes to continue with review annotations while the decision is audited separately.
+To create an explicit human review step, add a `review:gate` node after an AI node. By default it records a pending review, persists an execution checkpoint, and pauses the run. Approving the review resumes downstream execution from the checkpoint; rejecting the review marks the paused run as cancelled. Set `pass_through: true` only when you want downstream nodes to continue with review annotations while the decision is audited separately.
 
 ```json
 {
@@ -232,7 +232,7 @@ data/files/image_to_latex_workflow/
 - Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the FlowTracker dashboard powered by `apps/frontend/index.html`.
 - The UI is served directly by the Go API (configurable via `RIV_FRONTEND_DIR`) so the backend and frontend ship together in the monorepo.
 - The dashboard view calls `/dashboard/metrics`, which aggregates execution stats from `infra.InstanceManager`—success/fail counts, queue depth, and per-instance timings.
-- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, `/instances/:id/enqueue`, `/runs`, `/schedules`, and `/reviews` so you can create instances, enqueue sample data, inspect recent persisted runs, replay a prior execution, manage interval schedules, and approve or reject AI review requests from the browser.
+- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, `/instances/:id/enqueue`, `/runs`, `/schedules`, and `/reviews` so you can create instances, enqueue sample data, inspect recent persisted runs, replay a prior execution, manage interval schedules, and approve/resume or reject AI review requests from the browser.
 - Extend the cards by enhancing `infra.DashboardMetrics()` and updating the frontend HTML, or replace the static assets with a compiled SPA that targets the same endpoint.
 
 ### 10. Current API Surface
@@ -248,12 +248,12 @@ The API currently exposes:
 - `GET /schedules`, `POST /schedules`, `GET /schedules/:id`
 - `POST /schedules/:id/pause`, `POST /schedules/:id/resume`, `DELETE /schedules/:id`
 - `GET /reviews`, `GET /reviews/:id`
-- `POST /reviews/:id/approve`, `POST /reviews/:id/reject`
+- `POST /reviews/:id/approve`, `POST /reviews/:id/reject`; approval resumes a paused checkpoint when one exists, rejection cancels the paused run
 - `POST /instances`, `GET /instances`, `GET /instances/:id`
 - `POST /instances/:id/stop`, `GET /instances/:id/logs`, `POST /instances/:id/enqueue`
 - `GET /dashboard/metrics`
 
-Persisted workflow versions, run history, interval schedules, and human review requests are stored on disk under `data/store/`. Managed instances themselves remain in-memory.
+Persisted workflow versions, run history, interval schedules, human review requests, and paused execution checkpoints are stored on disk under `data/store/`. Managed instances themselves remain in-memory.
 
 #### Python Script Example
 

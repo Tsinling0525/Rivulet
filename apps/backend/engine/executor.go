@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -80,23 +81,53 @@ func chunk(items model.Items, n int) []model.Items {
 }
 
 func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inputs map[model.ID]model.Items) (map[model.ID]model.Items, error) {
+	return e.run(ctx, execID, wf, inputs, nil)
+}
+
+func (e *Engine) Resume(ctx context.Context, execID string, wf model.Workflow, checkpoint Checkpoint) (map[model.ID]model.Items, error) {
+	return e.run(ctx, execID, wf, nil, &checkpoint)
+}
+
+func (e *Engine) run(ctx context.Context, execID string, wf model.Workflow, inputs map[model.ID]model.Items, resume *Checkpoint) (map[model.ID]model.Items, error) {
 	order, _, _ := topo(wf)
 	succ := successorsWithPorts(wf)
 	pred := predecessorsWithPorts(wf)
-	e.Deps.Bus.Emit(ctx, "execution_started", map[string]any{"exec": execID, "workflow": wf.ID, "at": time.Now().UTC()})
+	eventName := "execution_started"
+	if resume != nil {
+		eventName = "execution_resumed"
+	}
+	e.Deps.Bus.Emit(ctx, eventName, map[string]any{"exec": execID, "workflow": wf.ID, "at": time.Now().UTC()})
 
 	// inbound buffers per node/port
 	inbound := make(map[model.ID]map[model.Port]model.Items)
-	for id := range inputs {
-		if inbound[id] == nil {
-			inbound[id] = make(map[model.Port]model.Items)
+	if resume != nil {
+		inbound = cloneInbound(resume.Inbound)
+	} else {
+		for id := range inputs {
+			if inbound[id] == nil {
+				inbound[id] = make(map[model.Port]model.Items)
+			}
+			inbound[id][model.PortMain] = append(inbound[id][model.PortMain], inputs[id]...)
 		}
-		inbound[id][model.PortMain] = append(inbound[id][model.PortMain], inputs[id]...)
 	}
 
 	results := map[model.ID]model.Items{}
+	if resume != nil {
+		results = cloneResults(resume.Results)
+	}
+	completed := map[model.ID]bool{}
+	completedOrder := make([]model.ID, 0, len(order))
+	if resume != nil {
+		for _, nodeID := range resume.Completed {
+			completed[nodeID] = true
+			completedOrder = append(completedOrder, nodeID)
+		}
+	}
 
 	for _, nodeID := range order {
+		if completed[nodeID] {
+			continue
+		}
 		var node model.Node
 		for _, n := range wf.Nodes {
 			if n.ID == nodeID {
@@ -241,6 +272,37 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 		}
 		wg.Wait()
 		if procErr != nil {
+			var paused *PausedError
+			if errors.As(procErr, &paused) {
+				outByPortTotal[model.PortMain] = append(outByPortTotal[model.PortMain], paused.Output...)
+				results[node.ID] = append(results[node.ID], outByPortTotal[model.PortMain]...)
+				completed[node.ID] = true
+				completedOrder = append(completedOrder, node.ID)
+				for _, edge := range succ[node.ID] {
+					items := outByPortTotal[edge.FromPort]
+					if len(items) == 0 {
+						continue
+					}
+					if inbound[edge.ToNode] == nil {
+						inbound[edge.ToNode] = make(map[model.Port]model.Items)
+					}
+					inbound[edge.ToNode][edge.ToPort] = append(inbound[edge.ToNode][edge.ToPort], items...)
+				}
+				paused.NodeID = node.ID
+				paused.NodeName = node.Name
+				paused.Checkpoint = &Checkpoint{
+					RunID:        execID,
+					WorkflowID:   wf.ID,
+					PausedNodeID: node.ID,
+					ReviewID:     paused.ReviewID,
+					Inbound:      cloneInbound(inbound),
+					Results:      cloneResults(results),
+					Completed:    append([]model.ID(nil), completedOrder...),
+					PausedAt:     time.Now().UTC(),
+				}
+				e.Deps.Bus.Emit(ctx, "execution_paused", map[string]any{"exec": execID, "node": node.ID, "review_id": paused.ReviewID, "at": time.Now().UTC()})
+				return results, paused
+			}
 			e.Deps.Bus.Emit(ctx, "node_failed", map[string]any{"exec": execID, "node": node.ID, "error": procErr.Error()})
 			e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": procErr.Error(), "at": time.Now().UTC()})
 			return nil, procErr
@@ -252,6 +314,8 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 
 		// Record flat results for convenience (main port)
 		results[node.ID] = append(results[node.ID], outByPortTotal[model.PortMain]...)
+		completed[node.ID] = true
+		completedOrder = append(completedOrder, node.ID)
 
 		// Route to successors by ports
 		for _, edge := range succ[node.ID] {
@@ -268,4 +332,35 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 
 	e.Deps.Bus.Emit(ctx, "execution_completed", map[string]any{"exec": execID, "at": time.Now().UTC()})
 	return results, nil
+}
+
+func cloneInbound(src map[model.ID]map[model.Port]model.Items) map[model.ID]map[model.Port]model.Items {
+	out := make(map[model.ID]map[model.Port]model.Items, len(src))
+	for nodeID, ports := range src {
+		out[nodeID] = make(map[model.Port]model.Items, len(ports))
+		for port, items := range ports {
+			out[nodeID][port] = cloneItems(items)
+		}
+	}
+	return out
+}
+
+func cloneResults(src map[model.ID]model.Items) map[model.ID]model.Items {
+	out := make(map[model.ID]model.Items, len(src))
+	for nodeID, items := range src {
+		out[nodeID] = cloneItems(items)
+	}
+	return out
+}
+
+func cloneItems(src model.Items) model.Items {
+	out := make(model.Items, 0, len(src))
+	for _, item := range src {
+		cloned := model.Item{}
+		for key, value := range item {
+			cloned[key] = value
+		}
+		out = append(out, cloned)
+	}
+	return out
 }

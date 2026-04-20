@@ -40,6 +40,8 @@ type RunRecord struct {
 	Trigger         string                    `json:"trigger,omitempty"`
 	InstanceID      string                    `json:"instance_id,omitempty"`
 	ScheduleID      string                    `json:"schedule_id,omitempty"`
+	ReviewID        string                    `json:"review_id,omitempty"`
+	CheckpointID    string                    `json:"checkpoint_id,omitempty"`
 	Status          string                    `json:"status"`
 	StartedAt       time.Time                 `json:"started_at"`
 	FinishedAt      time.Time                 `json:"finished_at"`
@@ -67,6 +69,7 @@ type ExecuteRequest struct {
 	Trigger         string
 	InstanceID      string
 	ScheduleID      string
+	Checkpoints     *CheckpointStore
 }
 
 type ExecuteResult struct {
@@ -107,7 +110,10 @@ func NewRunStore() *RunStore {
 func (s *RunStore) Save(run RunRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveLocked(run)
+}
 
+func (s *RunStore) saveLocked(run RunRecord) error {
 	if err := ensureDir(s.dir); err != nil {
 		return err
 	}
@@ -183,6 +189,97 @@ func (s *RunStore) Replay(ctx context.Context, deps plugin.Deps, id string, inpu
 	})
 }
 
+func (s *RunStore) MarkCancelled(id, reason string) (RunRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	run, err := s.loadLocked(id)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	run.Status = "cancelled"
+	run.Error = reason
+	run.FinishedAt = time.Now().UTC()
+	run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
+	if err := s.saveLocked(run); err != nil {
+		return RunRecord{}, err
+	}
+	return run, nil
+}
+
+func ResumeCheckpoint(ctx context.Context, deps plugin.Deps, runs *RunStore, checkpoints *CheckpointStore, checkpointID string) (ExecuteResult, error) {
+	checkpoint, err := checkpoints.Get(checkpointID)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	run, err := runs.Get(checkpoint.RunID)
+	if err != nil {
+		return ExecuteResult{}, err
+	}
+	var req n8n.N8nRequest
+	if err := json.Unmarshal(checkpoint.WorkflowRequest, &req); err != nil {
+		return ExecuteResult{}, err
+	}
+	workflow, _ := n8n.ToRivulet(req)
+
+	events := make([]RunEvent, 0, 8)
+	runDeps := deps
+	runDeps.Bus = recordingBus{next: deps.Bus, events: &events}
+
+	eng := engine.New(runDeps)
+	result, err := eng.Resume(ctx, run.ID, workflow, checkpoint.Checkpoint)
+	run.Events = append(run.Events, events...)
+	run.Result = cloneItemsMap(result)
+	if err != nil {
+		var paused *engine.PausedError
+		if errors.As(err, &paused) {
+			run.Status = "paused"
+			run.ReviewID = paused.ReviewID
+			if paused.Checkpoint != nil {
+				nextCheckpoint, saveErr := checkpoints.Create(CheckpointRecord{
+					RunID:           run.ID,
+					WorkflowID:      run.WorkflowID,
+					WorkflowVersion: run.WorkflowVersion,
+					ReviewID:        paused.ReviewID,
+					PausedNodeID:    paused.NodeID,
+					Checkpoint:      *paused.Checkpoint,
+					WorkflowRequest: run.WorkflowRequest,
+				})
+				if saveErr != nil {
+					return ExecuteResult{}, saveErr
+				}
+				run.CheckpointID = nextCheckpoint.ID
+			}
+			_, _ = checkpoints.MarkResumed(checkpoint.ID)
+			if err := runs.Save(run); err != nil {
+				return ExecuteResult{}, err
+			}
+			return ExecuteResult{Run: run, Result: result}, err
+		}
+
+		run.Status = "failed"
+		run.Error = err.Error()
+		run.FinishedAt = time.Now().UTC()
+		run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
+		_, _ = checkpoints.MarkResumed(checkpoint.ID)
+		if saveErr := runs.Save(run); saveErr != nil {
+			return ExecuteResult{}, saveErr
+		}
+		return ExecuteResult{Run: run, Result: result}, err
+	}
+
+	run.Status = "succeeded"
+	run.Error = ""
+	run.FinishedAt = time.Now().UTC()
+	run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
+	run.CheckpointID = ""
+	_, _ = checkpoints.MarkResumed(checkpoint.ID)
+	if err := runs.Save(run); err != nil {
+		return ExecuteResult{}, err
+	}
+	return ExecuteResult{Run: run, Result: result}, nil
+}
+
 func ExecuteWorkflow(ctx context.Context, deps plugin.Deps, store *RunStore, req ExecuteRequest) (ExecuteResult, error) {
 	workflow, defaultInputs := n8n.ToRivulet(req.WorkflowRequest)
 	inputs := cloneItemsMap(req.Inputs)
@@ -222,9 +319,36 @@ func ExecuteWorkflow(ctx context.Context, deps plugin.Deps, store *RunStore, req
 	eng := engine.New(runDeps)
 	result, err := eng.Run(ctx, run.ID, workflow, inputs)
 	run.Events = append(run.Events, events...)
-	run.FinishedAt = time.Now().UTC()
-	run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
 	if err != nil {
+		var paused *engine.PausedError
+		if errors.As(err, &paused) {
+			run.Status = "paused"
+			run.ReviewID = paused.ReviewID
+			run.Result = cloneItemsMap(result)
+			if paused.Checkpoint != nil && req.Checkpoints != nil {
+				checkpoint, saveErr := req.Checkpoints.Create(CheckpointRecord{
+					RunID:           run.ID,
+					WorkflowID:      workflowID,
+					WorkflowVersion: req.WorkflowVersion,
+					ReviewID:        paused.ReviewID,
+					PausedNodeID:    paused.NodeID,
+					Checkpoint:      *paused.Checkpoint,
+					WorkflowRequest: run.WorkflowRequest,
+				})
+				if saveErr != nil {
+					return ExecuteResult{}, saveErr
+				}
+				run.CheckpointID = checkpoint.ID
+			}
+			if store != nil {
+				if saveErr := store.Save(run); saveErr != nil {
+					return ExecuteResult{}, saveErr
+				}
+			}
+			return ExecuteResult{Run: run, Result: result}, err
+		}
+		run.FinishedAt = time.Now().UTC()
+		run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
 		run.Status = "failed"
 		run.Error = err.Error()
 		if store != nil {
@@ -235,6 +359,8 @@ func ExecuteWorkflow(ctx context.Context, deps plugin.Deps, store *RunStore, req
 		return ExecuteResult{Run: run}, err
 	}
 
+	run.FinishedAt = time.Now().UTC()
+	run.DurationMS = run.FinishedAt.Sub(run.StartedAt).Milliseconds()
 	run.Status = "succeeded"
 	run.Result = cloneItemsMap(result)
 	if store != nil {
