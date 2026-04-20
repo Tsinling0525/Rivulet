@@ -528,6 +528,55 @@
         font-size: 12px;
       }
 
+      .prompt-version-table th,
+      .prompt-version-table td {
+        padding-right: 12px;
+      }
+
+      .prompt-version-main {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .prompt-hash {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        color: var(--text-secondary);
+        word-break: break-all;
+      }
+
+      .prompt-diff {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        max-width: 420px;
+      }
+
+      .diff-line {
+        border-radius: 6px;
+        padding: 3px 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.4;
+        word-break: break-word;
+      }
+
+      .diff-line.added {
+        background: rgba(32, 192, 139, 0.12);
+        color: #0f7a59;
+      }
+
+      .diff-line.removed {
+        background: rgba(239, 91, 91, 0.12);
+        color: #b23b3b;
+      }
+
+      .diff-line.context {
+        background: var(--surface-muted);
+        color: var(--text-secondary);
+      }
+
       @media (max-width: 1080px) {
         .split-layout {
           grid-template-columns: 1fr;
@@ -663,6 +712,29 @@
                 </span>
                 <div class="status-pill" id="instanceSummary">Instances: --</div>
               </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-title">
+              <h2>Prompt Versions</h2>
+              <span class="helper">Versioned by prompt hash across persisted AI model calls.</span>
+            </div>
+            <div class="card">
+              <table class="prompt-version-table">
+                <thead>
+                  <tr>
+                    <th>Prompt</th>
+                    <th>Impact</th>
+                    <th>Diff From Previous</th>
+                  </tr>
+                </thead>
+                <tbody id="promptVersionTableBody">
+                  <tr>
+                    <td colspan="3" class="subtext">No AI model calls recorded yet.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
         </section>
@@ -835,6 +907,7 @@
       const averageTrendEl = document.getElementById("averageTrend");
       const distributionBarEl = document.getElementById("taskDistributionBar");
       const teamTableBody = document.getElementById("teamTableBody");
+      const promptVersionTableBody = document.getElementById("promptVersionTableBody");
       const instanceSummaryEl = document.getElementById("instanceSummary");
       const lastUpdatedEl = document.getElementById("lastUpdated");
       const errorMessageEl = document.getElementById("errorMessage");
@@ -1069,6 +1142,70 @@
           row.appendChild(avg);
           teamTableBody.appendChild(row);
         });
+      }
+
+      function shortHash(hash) {
+        const value = String(hash || "");
+        if (value.startsWith("sha256:")) {
+          return `sha256:${value.slice(7, 19)}`;
+        }
+        return value.length > 16 ? `${value.slice(0, 16)}...` : value;
+      }
+
+      function renderPromptDiff(lines, version) {
+        if (!Array.isArray(lines) || lines.length === 0) {
+          return `<span class="subtext">${version === "v1" ? "Initial version" : "No preview diff"}</span>`;
+        }
+        const prefixes = { added: "+", removed: "-", context: " " };
+        return `
+          <div class="prompt-diff">
+            ${lines
+              .map((line) => {
+                const type = ["added", "removed", "context"].includes(line.type) ? line.type : "context";
+                return `<div class="diff-line ${type}">${escapeHTML(prefixes[type] || " ")} ${escapeHTML(line.text || "")}</div>`;
+              })
+              .join("")}
+          </div>
+        `;
+      }
+
+      function renderPromptVersions(promptVersions) {
+        promptVersionTableBody.innerHTML = "";
+        if (!promptVersions || promptVersions.length === 0) {
+          promptVersionTableBody.innerHTML =
+            '<tr><td colspan="3" class="subtext">No AI model calls recorded yet.</td></tr>';
+          return;
+        }
+
+        promptVersionTableBody.innerHTML = promptVersions
+          .map((version) => {
+            const label = [version.provider, version.model].filter(Boolean).join(" / ") || "AI model";
+            const workflow = version.workflow_name || version.workflow_id || "Workflow";
+            const avgTokens = Number(version.average_total_tokens || 0).toFixed(1);
+            const successRate = Number(version.success_rate || 0).toFixed(0);
+            const latency = version.average_latency_ms ? `${Number(version.average_latency_ms).toFixed(0)} ms` : "--";
+            return `
+              <tr>
+                <td>
+                  <div class="prompt-version-main">
+                    <strong>${escapeHTML(workflow)} · ${escapeHTML(version.node_id || "node")} · ${escapeHTML(version.version || "")}</strong>
+                    <span class="subtext">${escapeHTML(label)}</span>
+                    <span class="prompt-hash">${escapeHTML(shortHash(version.prompt_hash))}</span>
+                    <span class="subtext">Last seen ${escapeHTML(formatTimestamp(version.last_seen_at))}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="prompt-version-main">
+                    <span>${escapeHTML(String(version.calls || 0))} calls · ${successRate}% success</span>
+                    <span class="subtext">${avgTokens} avg tokens · ${escapeHTML(String(version.total_tokens || 0))} total</span>
+                    <span class="subtext">${escapeHTML(latency)} avg latency</span>
+                  </div>
+                </td>
+                <td>${renderPromptDiff(version.prompt_preview_diff, version.version)}</td>
+              </tr>
+            `;
+          })
+          .join("");
       }
 
       function statusClass(stateValue) {
@@ -1562,6 +1699,7 @@
         averageCompletionEl.textContent = formatDuration(metrics.average_task_completion_seconds);
         renderTaskDistribution(metrics.task_status);
         renderTeamPerformance(metrics.team_performance);
+        renderPromptVersions(metrics.prompt_versions);
         formatTrend(completionTrendEl, metrics.workflow_completion_trend);
         formatTrend(averageTrendEl, metrics.average_task_completion_trend);
         instanceSummaryEl.textContent = `Instances: ${metrics.instances ?? 0}`;
