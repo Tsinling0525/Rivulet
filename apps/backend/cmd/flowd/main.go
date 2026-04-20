@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tsinling0525/rivulet/cmd/api/server"
+	_ "github.com/Tsinling0525/rivulet/nodes/review"
 )
 
 func main() {

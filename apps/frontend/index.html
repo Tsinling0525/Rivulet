@@ -741,6 +741,19 @@
 
                 <div class="card">
                   <div class="section-title">
+                    <h3>Human Reviews</h3>
+                    <button type="button" class="secondary" id="refreshReviews">Refresh Reviews</button>
+                  </div>
+                  <div class="helper">
+                    Review requests are created by <code>review:gate</code> nodes in AI workflows.
+                  </div>
+                  <div class="list" id="reviewsList">
+                    <div class="empty-state">No pending reviews.</div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="section-title">
                     <h3>Enqueue Input</h3>
                     <button type="button" class="secondary" id="loadSampleInputButton">Load Sample</button>
                   </div>
@@ -795,6 +808,7 @@
         workflowFiles: [],
         instances: [],
         schedules: [],
+        reviews: [],
         selectedWorkflowPath: "",
         selectedInstanceId: "",
         selectedInstanceDetail: null,
@@ -833,6 +847,7 @@
       const scheduleIntervalInputEl = document.getElementById("scheduleIntervalInput");
       const schedulePayloadInputEl = document.getElementById("schedulePayloadInput");
       const schedulesListEl = document.getElementById("schedulesList");
+      const reviewsListEl = document.getElementById("reviewsList");
       const enqueuePayloadInputEl = document.getElementById("enqueuePayloadInput");
       const instancesListEl = document.getElementById("instancesList");
       const instanceDetailEl = document.getElementById("instanceDetail");
@@ -1112,6 +1127,12 @@
         return schedule.enabled ? "enabled" : "paused";
       }
 
+      function reviewStatusClass(status) {
+        if (status === "approved") return "success";
+        if (status === "rejected") return "danger";
+        return "warning";
+      }
+
       function renderRunHistory(runs) {
         if (!runs || runs.length === 0) {
           return '<div class="empty-state">No persisted runs recorded for this workflow yet.</div>';
@@ -1308,6 +1329,51 @@
         schedulesListEl.querySelectorAll("[data-delete-schedule]").forEach((button) => {
           button.addEventListener("click", () => {
             void guarded(() => deleteSchedule(button.dataset.deleteSchedule));
+          });
+        });
+      }
+
+      function renderReviews() {
+        reviewsListEl.innerHTML = "";
+        if (state.reviews.length === 0) {
+          reviewsListEl.innerHTML = '<div class="empty-state">No pending reviews.</div>';
+          return;
+        }
+
+        state.reviews.forEach((review) => {
+          const item = document.createElement("div");
+          item.className = "list-item";
+          item.innerHTML = `
+            <div>
+              <p class="list-item-title">${escapeHTML(review.workflow_name || review.workflow_id || review.id)}</p>
+              <div class="list-item-meta">Node: ${escapeHTML(review.node_name || review.node_id || "review gate")}</div>
+              <div class="list-item-meta">Run: ${escapeHTML(review.run_id || "--")}</div>
+              <div class="list-item-meta">Created: ${escapeHTML(formatTimestamp(review.created_at))}</div>
+              <pre class="mini-pre">${prettyJSON({
+                proposed_output: review.proposed_output,
+                context: review.context,
+                input: review.input,
+              })}</pre>
+            </div>
+            <div class="stack">
+              <span class="status-pill ${reviewStatusClass(review.status)}">${escapeHTML(review.status || "pending")}</span>
+              <div class="button-row">
+                <button type="button" class="secondary" data-approve-review="${escapeHTML(review.id)}">Approve</button>
+                <button type="button" class="danger" data-reject-review="${escapeHTML(review.id)}">Reject</button>
+              </div>
+            </div>
+          `;
+          reviewsListEl.appendChild(item);
+        });
+
+        reviewsListEl.querySelectorAll("[data-approve-review]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => approveReview(button.dataset.approveReview));
+          });
+        });
+        reviewsListEl.querySelectorAll("[data-reject-review]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => rejectReview(button.dataset.rejectReview));
           });
         });
       }
@@ -1532,6 +1598,12 @@
         renderSchedules();
       }
 
+      async function fetchReviews() {
+        const data = await apiJSON("/reviews?status=pending");
+        state.reviews = data.reviews || [];
+        renderReviews();
+      }
+
       async function fetchInstanceResources(instanceId) {
         const [instanceData, logsData] = await Promise.all([
           apiJSON(`/instances/${instanceId}`),
@@ -1689,6 +1761,22 @@
         await fetchSchedules();
       }
 
+      async function approveReview(id) {
+        await apiJSON(`/reviews/${id}/approve`, {
+          method: "POST",
+          body: JSON.stringify({ reviewer: "dashboard" }),
+        });
+        await fetchReviews();
+      }
+
+      async function rejectReview(id) {
+        await apiJSON(`/reviews/${id}/reject`, {
+          method: "POST",
+          body: JSON.stringify({ reviewer: "dashboard" }),
+        });
+        await fetchReviews();
+      }
+
       async function replayRun(runId) {
         if (!runId) {
           return;
@@ -1705,7 +1793,7 @@
           await fetchMetrics();
           return;
         }
-        await Promise.all([fetchWorkflowFiles(), fetchInstances(), fetchSchedules()]);
+        await Promise.all([fetchWorkflowFiles(), fetchInstances(), fetchSchedules(), fetchReviews()]);
       }
 
       async function guarded(action) {
@@ -1727,6 +1815,7 @@
       document.getElementById("refreshWorkflows").addEventListener("click", () => guarded(fetchWorkflowFiles));
       document.getElementById("refreshInstances").addEventListener("click", () => guarded(fetchInstances));
       document.getElementById("refreshSchedules").addEventListener("click", () => guarded(fetchSchedules));
+      document.getElementById("refreshReviews").addEventListener("click", () => guarded(fetchReviews));
       document.getElementById("createInstanceButton").addEventListener("click", () => guarded(createInstance));
       document.getElementById("createScheduleButton").addEventListener("click", () => guarded(createSchedule));
       document.getElementById("enqueueButton").addEventListener("click", () => guarded(enqueueSelectedInstance));
@@ -1750,14 +1839,14 @@
       enqueueButton.disabled = true;
 
       guarded(async () => {
-        await Promise.all([fetchMetrics(), fetchWorkflowFiles(), fetchInstances(), fetchSchedules()]);
+        await Promise.all([fetchMetrics(), fetchWorkflowFiles(), fetchInstances(), fetchSchedules(), fetchReviews()]);
       });
 
       setInterval(() => {
         guarded(async () => {
           await fetchMetrics();
           if (state.currentView === "workflows") {
-            await Promise.all([fetchInstances(), fetchSchedules()]);
+            await Promise.all([fetchInstances(), fetchSchedules(), fetchReviews()]);
           }
         });
       }, 30000);

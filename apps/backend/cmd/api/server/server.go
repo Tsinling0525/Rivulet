@@ -25,6 +25,7 @@ import (
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
 	_ "github.com/Tsinling0525/rivulet/nodes/ollama"
 	_ "github.com/Tsinling0525/rivulet/nodes/openai"
+	_ "github.com/Tsinling0525/rivulet/nodes/review"
 	"github.com/Tsinling0525/rivulet/plugin"
 )
 
@@ -186,6 +187,15 @@ func scheduleResponse(schedule infra.Schedule) map[string]any {
 	}
 }
 
+func reviewStatusFromQuery(value string) model.ReviewStatus {
+	switch model.ReviewStatus(value) {
+	case model.ReviewPending, model.ReviewApproved, model.ReviewRejected:
+		return model.ReviewStatus(value)
+	default:
+		return ""
+	}
+}
+
 func parseInputData(raw any) (map[model.ID]model.Items, error) {
 	if raw == nil {
 		return nil, nil
@@ -215,7 +225,8 @@ func parseInputData(raw any) (map[model.ID]model.Items, error) {
 
 // NewRouter builds the Gin router with routes and middleware
 func NewRouter() *gin.Engine {
-	baseDeps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles()}
+	reviews := infra.NewReviewStore()
+	baseDeps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles(), Reviews: reviews}
 	workflows := infra.NewWorkflowStore()
 	runs := infra.NewRunStore()
 	schedules := infra.NewScheduleStore()
@@ -514,6 +525,70 @@ func NewRouter() *gin.Engine {
 			return
 		}
 		sendSuccess(c, map[string]any{"deleted": true})
+	})
+
+	r.GET("/reviews", func(c *gin.Context) {
+		items, err := reviews.List(c.Request.Context(), reviewStatusFromQuery(c.Query("status")))
+		if err != nil {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"reviews": items})
+	})
+
+	r.GET("/reviews/:id", func(c *gin.Context) {
+		review, err := reviews.Get(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrReviewNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"review": review})
+	})
+
+	r.POST("/reviews/:id/approve", func(c *gin.Context) {
+		var payload struct {
+			Reviewer string `json:"reviewer"`
+			Comment  string `json:"comment"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil && !errors.Is(err, io.EOF) {
+			sendError(c, http.StatusBadRequest, "invalid json")
+			return
+		}
+		review, err := reviews.Approve(c.Request.Context(), c.Param("id"), payload.Reviewer, payload.Comment)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrReviewNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"review": review})
+	})
+
+	r.POST("/reviews/:id/reject", func(c *gin.Context) {
+		var payload struct {
+			Reviewer string `json:"reviewer"`
+			Comment  string `json:"comment"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil && !errors.Is(err, io.EOF) {
+			sendError(c, http.StatusBadRequest, "invalid json")
+			return
+		}
+		review, err := reviews.Reject(c.Request.Context(), c.Param("id"), payload.Reviewer, payload.Comment)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrReviewNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"review": review})
 	})
 
 	// Instance Manager

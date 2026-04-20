@@ -26,6 +26,7 @@ import (
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
 	_ "github.com/Tsinling0525/rivulet/nodes/ollama"
 	_ "github.com/Tsinling0525/rivulet/nodes/openai"
+	_ "github.com/Tsinling0525/rivulet/nodes/review"
 )
 
 func runServer() error {

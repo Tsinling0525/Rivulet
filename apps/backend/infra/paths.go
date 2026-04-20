@@ -30,6 +30,9 @@ func RunHistoryDir() string { return filepath.Join(StoreDir(), "runs") }
 // ScheduleStoreDir is the directory storing persisted workflow schedules.
 func ScheduleStoreDir() string { return filepath.Join(StoreDir(), "schedules") }
 
+// ReviewStoreDir is the directory storing human review requests.
+func ReviewStoreDir() string { return filepath.Join(StoreDir(), "reviews") }
+
 // ScriptsDir is the directory to store Python scripts
 func ScriptsDir() string { return filepath.Join(DataDir(), "scripts") }
 

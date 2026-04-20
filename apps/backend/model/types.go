@@ -64,6 +64,45 @@ type Item = map[string]any
 
 type Items = []Item
 
+type ReviewStatus string
+
+const (
+	ReviewPending  ReviewStatus = "pending"
+	ReviewApproved ReviewStatus = "approved"
+	ReviewRejected ReviewStatus = "rejected"
+)
+
+type ReviewRequest struct {
+	ID             string       `json:"id"`
+	RunID          string       `json:"run_id"`
+	WorkflowID     ID           `json:"workflow_id"`
+	WorkflowName   string       `json:"workflow_name,omitempty"`
+	WorkflowKind   WorkflowKind `json:"workflow_kind,omitempty"`
+	NodeID         ID           `json:"node_id"`
+	NodeName       string       `json:"node_name,omitempty"`
+	Status         ReviewStatus `json:"status"`
+	Input          Item         `json:"input,omitempty"`
+	ProposedOutput any          `json:"proposed_output,omitempty"`
+	Context        Item         `json:"context,omitempty"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	DecidedAt      time.Time    `json:"decided_at,omitempty"`
+	Reviewer       string       `json:"reviewer,omitempty"`
+	Comment        string       `json:"comment,omitempty"`
+}
+
+type ReviewCreate struct {
+	RunID          string
+	WorkflowID     ID
+	WorkflowName   string
+	WorkflowKind   WorkflowKind
+	NodeID         ID
+	NodeName       string
+	Input          Item
+	ProposedOutput any
+	Context        Item
+}
+
 // FileMeta describes an attached file
 type FileMeta struct {
 	ID        string

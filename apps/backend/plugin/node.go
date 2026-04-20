@@ -20,9 +20,10 @@ func ExecutionIDFromContext(ctx context.Context) string {
 }
 
 type Deps struct {
-	State StateStore
-	Bus   EventBus
-	Files FileStore
+	State   StateStore
+	Bus     EventBus
+	Files   FileStore
+	Reviews ReviewStore
 }
 
 type NodeHandler interface {
@@ -41,6 +42,14 @@ type StateStore interface {
 
 type EventBus interface {
 	Emit(ctx context.Context, event string, fields map[string]any) error
+}
+
+type ReviewStore interface {
+	Create(ctx context.Context, req model.ReviewCreate) (model.ReviewRequest, error)
+	List(ctx context.Context, status model.ReviewStatus) ([]model.ReviewRequest, error)
+	Get(ctx context.Context, id string) (model.ReviewRequest, error)
+	Approve(ctx context.Context, id, reviewer, comment string) (model.ReviewRequest, error)
+	Reject(ctx context.Context, id, reviewer, comment string) (model.ReviewRequest, error)
 }
 
 // FileStore provides blob/file attachment access scoped by workflow ID

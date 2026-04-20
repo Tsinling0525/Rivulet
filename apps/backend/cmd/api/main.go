@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tsinling0525/rivulet/cmd/api/server"
+	_ "github.com/Tsinling0525/rivulet/nodes/review"
 )
 
 func main() {
@@ -39,6 +40,10 @@ func main() {
 	fmt.Printf("   POST   /schedules/:id/pause    - Pause a workflow schedule\n")
 	fmt.Printf("   POST   /schedules/:id/resume   - Resume a workflow schedule\n")
 	fmt.Printf("   DELETE /schedules/:id          - Delete a workflow schedule\n")
+	fmt.Printf("   GET    /reviews                - List human review requests\n")
+	fmt.Printf("   GET    /reviews/:id            - Inspect one review request\n")
+	fmt.Printf("   POST   /reviews/:id/approve    - Approve one review request\n")
+	fmt.Printf("   POST   /reviews/:id/reject     - Reject one review request\n")
 	fmt.Printf("   POST   /instances              - Create a managed workflow instance\n")
 	fmt.Printf("   GET    /instances              - List workflow instances\n")
 	fmt.Printf("   GET    /instances/:id          - Inspect one workflow instance\n")

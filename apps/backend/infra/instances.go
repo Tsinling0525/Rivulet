@@ -138,7 +138,7 @@ type InstanceManager struct {
 }
 
 func NewInstanceManager(workflows *WorkflowStore, runs *RunStore) *InstanceManager {
-	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: NewLocalFiles()}
+	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: NewLocalFiles(), Reviews: NewReviewStore()}
 	return &InstanceManager{
 		items:     make(map[string]*Instance),
 		deps:      deps,

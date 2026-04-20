@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -38,7 +37,7 @@ func runFlowFromFile(path string) error {
 }
 
 func pluginDeps() plugin.Deps {
-	return plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles()}
+	return plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles(), Reviews: infra.NewReviewStore()}
 }
 
 func runEchoSample() error {
