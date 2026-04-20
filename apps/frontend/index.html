@@ -707,6 +707,40 @@
 
                 <div class="card">
                   <div class="section-title">
+                    <h3>Schedules</h3>
+                    <button type="button" class="secondary" id="refreshSchedules">Refresh Schedules</button>
+                  </div>
+                  <div class="helper">
+                    Create interval schedules for persisted workflows. Scheduled runs are written to run history.
+                  </div>
+                  <div class="field">
+                    <label for="scheduleWorkflowIdInput">Persisted Workflow ID</label>
+                    <input id="scheduleWorkflowIdInput" type="text" placeholder="daily-report" />
+                  </div>
+                  <div class="detail-grid">
+                    <div class="field">
+                      <label for="scheduleVersionInput">Version</label>
+                      <input id="scheduleVersionInput" type="number" min="0" placeholder="0 = active" />
+                    </div>
+                    <div class="field">
+                      <label for="scheduleIntervalInput">Interval Seconds</label>
+                      <input id="scheduleIntervalInput" type="number" min="1" value="3600" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="schedulePayloadInput">Schedule Input</label>
+                    <textarea id="schedulePayloadInput" placeholder='{"start":[{"trigger":"schedule"}]}'></textarea>
+                  </div>
+                  <div class="button-row">
+                    <button type="button" id="createScheduleButton">Create Schedule</button>
+                  </div>
+                  <div class="list" id="schedulesList">
+                    <div class="empty-state">No schedules yet.</div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="section-title">
                     <h3>Enqueue Input</h3>
                     <button type="button" class="secondary" id="loadSampleInputButton">Load Sample</button>
                   </div>
@@ -760,10 +794,12 @@
         currentView: "dashboard",
         workflowFiles: [],
         instances: [],
+        schedules: [],
         selectedWorkflowPath: "",
         selectedInstanceId: "",
         selectedInstanceDetail: null,
         selectedInstanceLogs: [],
+        selectedInstanceRuns: [],
         executionMonitor: null,
       };
 
@@ -792,6 +828,11 @@
       const pageSubtitleEl = document.getElementById("pageSubtitle");
       const workflowFilesListEl = document.getElementById("workflowFilesList");
       const workflowPathInputEl = document.getElementById("workflowPathInput");
+      const scheduleWorkflowIdInputEl = document.getElementById("scheduleWorkflowIdInput");
+      const scheduleVersionInputEl = document.getElementById("scheduleVersionInput");
+      const scheduleIntervalInputEl = document.getElementById("scheduleIntervalInput");
+      const schedulePayloadInputEl = document.getElementById("schedulePayloadInput");
+      const schedulesListEl = document.getElementById("schedulesList");
       const enqueuePayloadInputEl = document.getElementById("enqueuePayloadInput");
       const instancesListEl = document.getElementById("instancesList");
       const instanceDetailEl = document.getElementById("instanceDetail");
@@ -869,6 +910,29 @@
           return `${minutes.toFixed(0)} Min`;
         }
         return `${seconds.toFixed(0)} Sec`;
+      }
+
+      function formatInterval(seconds) {
+        if (!seconds || seconds <= 0) {
+          return "--";
+        }
+        if (seconds % 86400 === 0) {
+          return `${seconds / 86400}d`;
+        }
+        if (seconds % 3600 === 0) {
+          return `${seconds / 3600}h`;
+        }
+        if (seconds % 60 === 0) {
+          return `${seconds / 60}m`;
+        }
+        return `${seconds}s`;
+      }
+
+      function formatTimestamp(value) {
+        if (!value || String(value).startsWith("0001-")) {
+          return "--";
+        }
+        return new Date(value).toLocaleString();
       }
 
       function escapeHTML(value) {
@@ -1030,6 +1094,61 @@
         };
       }
 
+      function runStatusClass(status) {
+        if (status === "succeeded") return "success";
+        if (status === "failed") return "danger";
+        if (status === "running") return "warning";
+        return "";
+      }
+
+      function scheduleStatusClass(schedule) {
+        if (schedule.running) return "warning";
+        if (schedule.enabled) return "success";
+        return "danger";
+      }
+
+      function scheduleStatusLabel(schedule) {
+        if (schedule.running) return "running";
+        return schedule.enabled ? "enabled" : "paused";
+      }
+
+      function renderRunHistory(runs) {
+        if (!runs || runs.length === 0) {
+          return '<div class="empty-state">No persisted runs recorded for this workflow yet.</div>';
+        }
+
+        return `
+          <div class="result-grid">
+            ${runs
+              .map((run) => {
+                const startedAt = run.started_at ? new Date(run.started_at).toLocaleString() : "--";
+                const eventCount = Array.isArray(run.events) ? run.events.length : 0;
+                return `
+                  <div class="result-card">
+                    <div class="status-stack">
+                      <span class="status-pill ${runStatusClass(run.status)}">${escapeHTML(run.status || "unknown")}</span>
+                      <span class="meta">${escapeHTML(run.source || "run")} · ${escapeHTML(run.trigger || "manual")}</span>
+                    </div>
+                    <h4>${escapeHTML(run.workflow_name || run.workflow_id || run.id)}</h4>
+                    <code>${escapeHTML(run.id)}</code>
+                    <div class="meta">Started ${escapeHTML(startedAt)}</div>
+                    <div class="meta">${escapeHTML(String(run.duration_ms ?? 0))} ms · ${eventCount} event${eventCount === 1 ? "" : "s"}</div>
+                    ${
+                      run.error
+                        ? `<div class="error">${escapeHTML(run.error)}</div>`
+                        : `<pre class="mini-pre">${prettyJSON(run.result || {})}</pre>`
+                    }
+                    <div class="button-row">
+                      <button type="button" class="secondary" data-replay-run="${escapeHTML(run.id)}">Replay Run</button>
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")}
+          </div>
+        `;
+      }
+
       function stopExecutionMonitor() {
         if (state.executionMonitor?.timerId) {
           clearTimeout(state.executionMonitor.timerId);
@@ -1061,11 +1180,13 @@
         workflowPathInputEl.value = path || "";
         const workflow = state.workflowFiles.find((item) => item.path === path);
         if (workflow) {
+          scheduleWorkflowIdInputEl.value = workflow.workflow_id || "";
           enqueuePayloadInputEl.value = JSON.stringify(
             { data: workflow.sample_data || {} },
             null,
             2
           );
+          schedulePayloadInputEl.value = JSON.stringify(workflow.sample_data || {}, null, 2);
         }
         renderWorkflowFiles();
       }
@@ -1132,10 +1253,65 @@
         });
       }
 
-      function renderInstanceDetail(instance, logs) {
+      function renderSchedules() {
+        schedulesListEl.innerHTML = "";
+        if (state.schedules.length === 0) {
+          schedulesListEl.innerHTML = '<div class="empty-state">No schedules yet.</div>';
+          return;
+        }
+
+        state.schedules.forEach((schedule) => {
+          const item = document.createElement("div");
+          item.className = "list-item";
+          item.innerHTML = `
+            <div>
+              <p class="list-item-title">${escapeHTML(schedule.workflow_id || schedule.id)}</p>
+              <div class="list-item-meta">Every ${escapeHTML(formatInterval(schedule.interval_seconds))} · version ${escapeHTML(String(schedule.workflow_version || "active"))}</div>
+              <div class="list-item-meta">Next run: ${escapeHTML(formatTimestamp(schedule.next_run_at))}</div>
+              ${
+                schedule.last_run_id
+                  ? `<div class="list-item-meta">Last: ${escapeHTML(schedule.last_status || "unknown")} · ${escapeHTML(schedule.last_run_id)}</div>`
+                  : ""
+              }
+              ${schedule.last_error ? `<div class="error">${escapeHTML(schedule.last_error)}</div>` : ""}
+            </div>
+            <div class="stack">
+              <span class="status-pill ${scheduleStatusClass(schedule)}">${scheduleStatusLabel(schedule)}</span>
+              <div class="button-row">
+                ${
+                  schedule.enabled
+                    ? `<button type="button" class="secondary" data-pause-schedule="${escapeHTML(schedule.id)}">Pause</button>`
+                    : `<button type="button" class="secondary" data-resume-schedule="${escapeHTML(schedule.id)}">Resume</button>`
+                }
+                <button type="button" class="danger" data-delete-schedule="${escapeHTML(schedule.id)}">Delete</button>
+              </div>
+            </div>
+          `;
+          schedulesListEl.appendChild(item);
+        });
+
+        schedulesListEl.querySelectorAll("[data-pause-schedule]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => pauseSchedule(button.dataset.pauseSchedule));
+          });
+        });
+        schedulesListEl.querySelectorAll("[data-resume-schedule]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => resumeSchedule(button.dataset.resumeSchedule));
+          });
+        });
+        schedulesListEl.querySelectorAll("[data-delete-schedule]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => deleteSchedule(button.dataset.deleteSchedule));
+          });
+        });
+      }
+
+      function renderInstanceDetail(instance, logs, runs) {
         if (!instance) {
           state.selectedInstanceDetail = null;
           state.selectedInstanceLogs = [];
+          state.selectedInstanceRuns = [];
           instanceDetailEl.innerHTML =
             '<div class="empty-state">Select an instance to inspect state and logs.</div>';
           stopInstanceButton.disabled = true;
@@ -1149,6 +1325,7 @@
         enqueueButton.disabled = false;
         state.selectedInstanceDetail = instance;
         state.selectedInstanceLogs = logs || [];
+        state.selectedInstanceRuns = runs || [];
         const createdAt = instance.created_at
           ? new Date(instance.created_at * 1000).toLocaleString()
           : "--";
@@ -1261,13 +1438,21 @@
               <label>Latest Execution Raw JSON</label>
               <pre>${prettyJSON({
                 execution_id: lastExecution.execution_id || null,
+                status: lastExecution.status || null,
+                workflow_id: lastExecution.workflow_id || null,
+                workflow_version: lastExecution.workflow_version || null,
                 started_at: lastExecution.started_at || null,
                 finished_at: lastExecution.finished_at || null,
                 duration_ms: lastExecution.duration_ms ?? 0,
                 error: lastExecution.error || null,
+                events: lastExecution.events || [],
                 input: lastExecution.input || {},
                 result: lastExecution.result || {},
               })}</pre>
+            </div>
+            <div class="field">
+              <label>Recent Persisted Runs</label>
+              ${renderRunHistory(runs || [])}
             </div>
             <div class="field">
               <label>Execution Logs</label>
@@ -1275,6 +1460,12 @@
             </div>
           </div>
         `;
+
+        instanceDetailEl.querySelectorAll("[data-replay-run]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => replayRun(button.dataset.replayRun));
+          });
+        });
       }
 
       async function fetchMetrics() {
@@ -1324,12 +1515,22 @@
         await fetchInstanceDetail();
       }
 
+      async function fetchSchedules() {
+        const data = await apiJSON("/schedules");
+        state.schedules = data.schedules || [];
+        renderSchedules();
+      }
+
       async function fetchInstanceResources(instanceId) {
         const [instanceData, logsData] = await Promise.all([
           apiJSON(`/instances/${instanceId}`),
           apiJSON(`/instances/${instanceId}/logs`),
         ]);
-        return { instanceData, logsData };
+        const workflowId = instanceData.workflow_id || instanceData.workflow?.id || "";
+        const runsData = workflowId
+          ? await apiJSON(`/runs?workflow_id=${encodeURIComponent(workflowId)}&limit=8`)
+          : { runs: [] };
+        return { instanceData, logsData, runsData };
       }
 
       async function fetchInstanceDetail() {
@@ -1338,8 +1539,8 @@
           return;
         }
 
-        const { instanceData, logsData } = await fetchInstanceResources(state.selectedInstanceId);
-        renderInstanceDetail(instanceData, logsData.logs || []);
+        const { instanceData, logsData, runsData } = await fetchInstanceResources(state.selectedInstanceId);
+        renderInstanceDetail(instanceData, logsData.logs || [], runsData.runs || []);
         return instanceData;
       }
 
@@ -1350,13 +1551,13 @@
         }
 
         try {
-          const { instanceData, logsData } = await fetchInstanceResources(monitor.instanceId);
+          const { instanceData, logsData, runsData } = await fetchInstanceResources(monitor.instanceId);
           const listData = await apiJSON("/instances");
           state.instances = listData.instances || [];
           renderInstances();
 
           if (state.selectedInstanceId === monitor.instanceId) {
-            renderInstanceDetail(instanceData, logsData.logs || []);
+            renderInstanceDetail(instanceData, logsData.logs || [], runsData.runs || []);
           }
 
           const executions = instanceData.stats?.total_executions ?? 0;
@@ -1424,12 +1625,76 @@
         await fetchInstances();
       }
 
+      async function createSchedule() {
+        const workflowId = scheduleWorkflowIdInputEl.value.trim();
+        const intervalSeconds = Number.parseInt(scheduleIntervalInputEl.value, 10);
+        const version = Number.parseInt(scheduleVersionInputEl.value || "0", 10) || 0;
+        if (!workflowId) {
+          throw new Error("Persisted workflow ID is required.");
+        }
+        if (!intervalSeconds || intervalSeconds <= 0) {
+          throw new Error("Interval seconds must be greater than zero.");
+        }
+
+        let data = {};
+        const rawPayload = schedulePayloadInputEl.value.trim();
+        if (rawPayload) {
+          data = JSON.parse(rawPayload);
+        }
+
+        await apiJSON("/schedules", {
+          method: "POST",
+          body: JSON.stringify({
+            workflow_id: workflowId,
+            version,
+            interval_seconds: intervalSeconds,
+            data,
+            enabled: true,
+          }),
+        });
+        await fetchSchedules();
+      }
+
+      async function pauseSchedule(id) {
+        await apiJSON(`/schedules/${id}/pause`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await fetchSchedules();
+      }
+
+      async function resumeSchedule(id) {
+        await apiJSON(`/schedules/${id}/resume`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await fetchSchedules();
+      }
+
+      async function deleteSchedule(id) {
+        await apiJSON(`/schedules/${id}`, {
+          method: "DELETE",
+        });
+        await fetchSchedules();
+      }
+
+      async function replayRun(runId) {
+        if (!runId) {
+          return;
+        }
+        await apiJSON(`/runs/${runId}/replay`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await Promise.all([fetchMetrics(), fetchInstanceDetail()]);
+      }
+
       async function refreshCurrentView() {
         if (state.currentView === "dashboard") {
           await fetchMetrics();
           return;
         }
-        await Promise.all([fetchWorkflowFiles(), fetchInstances()]);
+        await Promise.all([fetchWorkflowFiles(), fetchInstances(), fetchSchedules()]);
       }
 
       async function guarded(action) {
@@ -1450,12 +1715,15 @@
       document.getElementById("refreshCurrentView").addEventListener("click", () => guarded(refreshCurrentView));
       document.getElementById("refreshWorkflows").addEventListener("click", () => guarded(fetchWorkflowFiles));
       document.getElementById("refreshInstances").addEventListener("click", () => guarded(fetchInstances));
+      document.getElementById("refreshSchedules").addEventListener("click", () => guarded(fetchSchedules));
       document.getElementById("createInstanceButton").addEventListener("click", () => guarded(createInstance));
+      document.getElementById("createScheduleButton").addEventListener("click", () => guarded(createSchedule));
       document.getElementById("enqueueButton").addEventListener("click", () => guarded(enqueueSelectedInstance));
       document.getElementById("loadSampleInputButton").addEventListener("click", () => {
         const workflow = state.workflowFiles.find((item) => item.path === state.selectedWorkflowPath);
         if (workflow) {
           enqueuePayloadInputEl.value = JSON.stringify({ data: workflow.sample_data || {} }, null, 2);
+          schedulePayloadInputEl.value = JSON.stringify(workflow.sample_data || {}, null, 2);
         }
       });
       refreshLogsButton.addEventListener("click", () => guarded(fetchInstanceDetail));
@@ -1471,14 +1739,14 @@
       enqueueButton.disabled = true;
 
       guarded(async () => {
-        await Promise.all([fetchMetrics(), fetchWorkflowFiles(), fetchInstances()]);
+        await Promise.all([fetchMetrics(), fetchWorkflowFiles(), fetchInstances(), fetchSchedules()]);
       });
 
       setInterval(() => {
         guarded(async () => {
           await fetchMetrics();
           if (state.currentView === "workflows") {
-            await fetchInstances();
+            await Promise.all([fetchInstances(), fetchSchedules()]);
           }
         });
       }, 30000);

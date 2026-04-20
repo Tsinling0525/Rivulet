@@ -1,19 +1,22 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/Tsinling0525/rivulet/engine"
 	"github.com/Tsinling0525/rivulet/format/n8n"
 	"github.com/Tsinling0525/rivulet/infra"
 	apiinfra "github.com/Tsinling0525/rivulet/infra/api"
+	"github.com/Tsinling0525/rivulet/model"
 	_ "github.com/Tsinling0525/rivulet/nodes/echo"
 	_ "github.com/Tsinling0525/rivulet/nodes/files"
 	_ "github.com/Tsinling0525/rivulet/nodes/fs"
@@ -53,22 +56,24 @@ func handleHealth(c *gin.Context) {
 	sendSuccess(c, map[string]interface{}{"status": "healthy", "timestamp": time.Now().Unix(), "version": "1.0.0"})
 }
 
-func handleStartWorkflow(c *gin.Context) {
-	var req APIRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
-		return
+func handleStartWorkflow(deps plugin.Deps, runs *infra.RunStore) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req APIRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+			return
+		}
+		outcome, err := infra.ExecuteWorkflow(c.Request.Context(), deps, runs, infra.ExecuteRequest{
+			WorkflowRequest: req,
+			Source:          "ad_hoc",
+			Trigger:         "api_start",
+		})
+		if err != nil {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]interface{}{"executionId": outcome.Run.ID, "result": outcome.Result, "run": outcome.Run})
 	}
-	workflow, inputData := n8n.ToRivulet(req)
-	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles()}
-	eng := engine.New(deps)
-	executionID := fmt.Sprintf("exec-%d", time.Now().Unix())
-	result, err := eng.Run(c.Request.Context(), executionID, workflow, inputData)
-	if err != nil {
-		sendError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	sendSuccess(c, map[string]interface{}{"executionId": executionID, "result": result})
 }
 
 func listWorkflowFiles() ([]map[string]any, error) {
@@ -114,15 +119,111 @@ func avgDurationMS(stats infra.InstanceStats) int64 {
 	return stats.TotalSuccessDuration.Milliseconds() / int64(stats.SuccessfulExecutions)
 }
 
+func workflowSummary(record infra.StoredWorkflow) map[string]any {
+	return map[string]any{
+		"id":             record.ID,
+		"name":           record.Name,
+		"description":    record.Description,
+		"active_version": record.ActiveVersion,
+		"created_at":     record.CreatedAt,
+		"updated_at":     record.UpdatedAt,
+		"versions":       len(record.Versions),
+		"node_count":     workflowNodeCount(record, record.ActiveVersion),
+	}
+}
+
+func workflowDetail(record infra.StoredWorkflow) map[string]any {
+	versions := make([]map[string]any, 0, len(record.Versions))
+	for _, version := range record.Versions {
+		versions = append(versions, map[string]any{
+			"number":     version.Number,
+			"created_at": version.CreatedAt,
+			"node_count": version.NodeCount,
+			"active":     version.Number == record.ActiveVersion,
+			"request":    json.RawMessage(version.Request),
+		})
+	}
+	return map[string]any{
+		"id":             record.ID,
+		"name":           record.Name,
+		"description":    record.Description,
+		"active_version": record.ActiveVersion,
+		"created_at":     record.CreatedAt,
+		"updated_at":     record.UpdatedAt,
+		"versions":       versions,
+	}
+}
+
+func workflowNodeCount(record infra.StoredWorkflow, version int) int {
+	for _, item := range record.Versions {
+		if item.Number == version {
+			return item.NodeCount
+		}
+	}
+	return 0
+}
+
+func scheduleResponse(schedule infra.Schedule) map[string]any {
+	return map[string]any{
+		"id":               schedule.ID,
+		"workflow_id":      schedule.WorkflowID,
+		"workflow_version": schedule.WorkflowVersion,
+		"interval_seconds": schedule.IntervalSeconds,
+		"input":            schedule.Input,
+		"enabled":          schedule.Enabled,
+		"running":          schedule.Running,
+		"created_at":       schedule.CreatedAt,
+		"updated_at":       schedule.UpdatedAt,
+		"next_run_at":      schedule.NextRunAt,
+		"last_run_at":      schedule.LastRunAt,
+		"last_run_id":      schedule.LastRunID,
+		"last_status":      schedule.LastStatus,
+		"last_error":       schedule.LastError,
+	}
+}
+
+func parseInputData(raw any) (map[model.ID]model.Items, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	out := map[model.ID]model.Items{}
+	root, ok := raw.(map[string]any)
+	if !ok {
+		return nil, http.ErrBodyNotAllowed
+	}
+	for key, value := range root {
+		arr, ok := value.([]any)
+		if !ok {
+			return nil, http.ErrBodyNotAllowed
+		}
+		items := make(model.Items, 0, len(arr))
+		for _, entry := range arr {
+			obj, ok := entry.(map[string]any)
+			if !ok {
+				return nil, http.ErrBodyNotAllowed
+			}
+			items = append(items, model.Item(obj))
+		}
+		out[model.ID(key)] = items
+	}
+	return out, nil
+}
+
 // NewRouter builds the Gin router with routes and middleware
 func NewRouter() *gin.Engine {
+	baseDeps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: infra.NewLocalFiles()}
+	workflows := infra.NewWorkflowStore()
+	runs := infra.NewRunStore()
+	schedules := infra.NewScheduleStore()
+	scheduleRunner := infra.NewScheduleRunner(baseDeps, workflows, runs, schedules)
+	scheduleRunner.Start(context.Background(), time.Second)
 	r := gin.Default()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -133,7 +234,7 @@ func NewRouter() *gin.Engine {
 
 	// Routes (start-only API)
 	r.GET("/health", handleHealth)
-	r.POST("/workflow/start", handleStartWorkflow)
+	r.POST("/workflow/start", handleStartWorkflow(baseDeps, runs))
 	r.GET("/workflows/files", func(c *gin.Context) {
 		workflows, err := listWorkflowFiles()
 		if err != nil {
@@ -143,8 +244,276 @@ func NewRouter() *gin.Engine {
 		sendSuccess(c, map[string]any{"workflows": workflows})
 	})
 
+	r.GET("/workflows", func(c *gin.Context) {
+		records, err := workflows.List()
+		if err != nil {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out := make([]map[string]any, 0, len(records))
+		for _, record := range records {
+			out = append(out, workflowSummary(record))
+		}
+		sendSuccess(c, map[string]any{"workflows": out})
+	})
+
+	r.POST("/workflows", func(c *gin.Context) {
+		var payload struct {
+			Description string                 `json:"description"`
+			Activate    *bool                  `json:"activate"`
+			Workflow    n8n.N8nWorkflow        `json:"workflow"`
+			Data        map[string]interface{} `json:"data,omitempty"`
+			Options     map[string]interface{} `json:"options,omitempty"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+			return
+		}
+		req := n8n.N8nRequest{Workflow: payload.Workflow, Data: payload.Data, Options: payload.Options}
+		record, err := workflows.Create(req, payload.Description, payload.Activate == nil || *payload.Activate)
+		if err != nil {
+			sendError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"workflow": workflowDetail(record)})
+	})
+
+	r.GET("/workflows/:id", func(c *gin.Context) {
+		record, err := workflows.Get(c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"workflow": workflowDetail(record)})
+	})
+
+	r.POST("/workflows/:id/versions", func(c *gin.Context) {
+		var payload struct {
+			Activate *bool                  `json:"activate"`
+			Workflow n8n.N8nWorkflow        `json:"workflow"`
+			Data     map[string]interface{} `json:"data,omitempty"`
+			Options  map[string]interface{} `json:"options,omitempty"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+			return
+		}
+		req := n8n.N8nRequest{Workflow: payload.Workflow, Data: payload.Data, Options: payload.Options}
+		record, err := workflows.AddVersion(c.Param("id"), req, payload.Activate == nil || *payload.Activate)
+		if err != nil {
+			status := http.StatusBadRequest
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"workflow": workflowDetail(record)})
+	})
+
+	r.POST("/workflows/:id/activate", func(c *gin.Context) {
+		var payload struct {
+			Version int `json:"version"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil || payload.Version <= 0 {
+			sendError(c, http.StatusBadRequest, "version is required")
+			return
+		}
+		record, err := workflows.ActivateVersion(c.Param("id"), payload.Version)
+		if err != nil {
+			status := http.StatusBadRequest
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"workflow": workflowDetail(record)})
+	})
+
+	r.GET("/workflows/:id/versions/:version", func(c *gin.Context) {
+		version, err := strconv.Atoi(c.Param("version"))
+		if err != nil || version <= 0 {
+			sendError(c, http.StatusBadRequest, "invalid version")
+			return
+		}
+		record, req, err := workflows.LoadVersionRequest(c.Param("id"), version)
+		if err != nil {
+			status := http.StatusBadRequest
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{
+			"workflow_id": record.ID,
+			"version":     version,
+			"request":     req,
+		})
+	})
+
+	r.GET("/runs", func(c *gin.Context) {
+		limit, _ := strconv.Atoi(c.Query("limit"))
+		items, err := runs.List(c.Query("workflow_id"), limit)
+		if err != nil {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"runs": items})
+	})
+
+	r.GET("/runs/:id", func(c *gin.Context) {
+		run, err := runs.Get(c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrRunNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"run": run})
+	})
+
+	r.POST("/runs/:id/replay", func(c *gin.Context) {
+		var body map[string]any
+		if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+			sendError(c, http.StatusBadRequest, "invalid json")
+			return
+		}
+		inputs, err := parseInputData(body["data"])
+		if err != nil {
+			sendError(c, http.StatusBadRequest, "data must look like {nodeId: [{...}]}")
+			return
+		}
+		outcome, err := runs.Replay(c.Request.Context(), baseDeps, c.Param("id"), inputs)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrRunNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"executionId": outcome.Run.ID, "result": outcome.Result, "run": outcome.Run})
+	})
+
+	r.GET("/schedules", func(c *gin.Context) {
+		items, err := schedules.List()
+		if err != nil {
+			sendError(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			out = append(out, scheduleResponse(item))
+		}
+		sendSuccess(c, map[string]any{"schedules": out})
+	})
+
+	r.POST("/schedules", func(c *gin.Context) {
+		var payload struct {
+			WorkflowID      string    `json:"workflow_id"`
+			Version         int       `json:"version"`
+			IntervalSeconds int       `json:"interval_seconds"`
+			Data            any       `json:"data"`
+			Enabled         *bool     `json:"enabled"`
+			NextRunAt       time.Time `json:"next_run_at"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+			return
+		}
+		if _, _, err := workflows.LoadVersionRequest(payload.WorkflowID, payload.Version); err != nil {
+			status := http.StatusBadRequest
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		inputs, err := parseInputData(payload.Data)
+		if err != nil {
+			sendError(c, http.StatusBadRequest, "data must look like {nodeId: [{...}]}")
+			return
+		}
+		enabled := true
+		if payload.Enabled != nil {
+			enabled = *payload.Enabled
+		}
+		schedule, err := schedules.Create(infra.ScheduleCreate{
+			WorkflowID:      payload.WorkflowID,
+			WorkflowVersion: payload.Version,
+			IntervalSeconds: payload.IntervalSeconds,
+			Input:           inputs,
+			Enabled:         enabled,
+			NextRunAt:       payload.NextRunAt,
+		})
+		if err != nil {
+			sendError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"schedule": scheduleResponse(schedule)})
+	})
+
+	r.GET("/schedules/:id", func(c *gin.Context) {
+		schedule, err := schedules.Get(c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrScheduleNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"schedule": scheduleResponse(schedule)})
+	})
+
+	r.POST("/schedules/:id/pause", func(c *gin.Context) {
+		schedule, err := schedules.Pause(c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrScheduleNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"schedule": scheduleResponse(schedule)})
+	})
+
+	r.POST("/schedules/:id/resume", func(c *gin.Context) {
+		schedule, err := schedules.Resume(c.Param("id"))
+		if err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrScheduleNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"schedule": scheduleResponse(schedule)})
+	})
+
+	r.DELETE("/schedules/:id", func(c *gin.Context) {
+		if err := schedules.Delete(c.Param("id")); err != nil {
+			status := http.StatusInternalServerError
+			if err == infra.ErrScheduleNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"deleted": true})
+	})
+
 	// Instance Manager
-	mgr := infra.NewInstanceManager()
+	mgr := infra.NewInstanceManager(workflows, runs)
 
 	frontendDir := infra.FrontendDir()
 	if stat, err := os.Stat(frontendDir); err == nil && stat.IsDir() {
@@ -157,17 +526,31 @@ func NewRouter() *gin.Engine {
 	r.POST("/instances", func(c *gin.Context) {
 		var payload struct {
 			WorkflowPath string `json:"workflow_path"`
+			WorkflowID   string `json:"workflow_id"`
+			Version      int    `json:"version"`
 		}
-		if err := c.ShouldBindJSON(&payload); err != nil || payload.WorkflowPath == "" {
-			sendError(c, http.StatusBadRequest, "workflow_path is required")
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			sendError(c, http.StatusBadRequest, "invalid json")
 			return
 		}
-		inst, err := mgr.CreateFromWorkflowPath(payload.WorkflowPath)
+		var (
+			inst *infra.Instance
+			err  error
+		)
+		switch {
+		case payload.WorkflowID != "":
+			inst, err = mgr.CreateFromWorkflowID(payload.WorkflowID, payload.Version)
+		case payload.WorkflowPath != "":
+			inst, err = mgr.CreateFromWorkflowPath(payload.WorkflowPath)
+		default:
+			sendError(c, http.StatusBadRequest, "workflow_path or workflow_id is required")
+			return
+		}
 		if err != nil {
 			sendError(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		sendSuccess(c, map[string]interface{}{"id": inst.ID, "state": inst.State, "name": inst.Name})
+		sendSuccess(c, map[string]interface{}{"id": inst.ID, "state": inst.State, "name": inst.Name, "workflow_id": inst.WorkflowID, "workflow_version": inst.WorkflowVersion})
 	})
 
 	r.GET("/instances", func(c *gin.Context) {
@@ -176,13 +559,15 @@ func NewRouter() *gin.Engine {
 		for _, it := range list {
 			snapshot := it.Snapshot()
 			out = append(out, map[string]any{
-				"id":            it.ID,
-				"name":          it.Name,
-				"state":         it.State,
-				"created_at":    it.CreatedAt.Unix(),
-				"workflow_path": it.WorkflowPath,
-				"queue_length":  snapshot.QueueLength,
-				"is_executing":  snapshot.Active.IsExecuting,
+				"id":               it.ID,
+				"name":             it.Name,
+				"state":            it.State,
+				"created_at":       it.CreatedAt.Unix(),
+				"workflow_path":    it.WorkflowPath,
+				"workflow_id":      it.WorkflowID,
+				"workflow_version": it.WorkflowVersion,
+				"queue_length":     snapshot.QueueLength,
+				"is_executing":     snapshot.Active.IsExecuting,
 			})
 		}
 		sendSuccess(c, map[string]any{"instances": out})
@@ -197,11 +582,13 @@ func NewRouter() *gin.Engine {
 		}
 		snapshot := inst.Snapshot()
 		sendSuccess(c, map[string]any{
-			"id":            inst.ID,
-			"name":          inst.Name,
-			"state":         inst.State,
-			"created_at":    inst.CreatedAt.Unix(),
-			"workflow_path": inst.WorkflowPath,
+			"id":               inst.ID,
+			"name":             inst.Name,
+			"state":            inst.State,
+			"created_at":       inst.CreatedAt.Unix(),
+			"workflow_path":    inst.WorkflowPath,
+			"workflow_id":      inst.WorkflowID,
+			"workflow_version": inst.WorkflowVersion,
 			"workflow": map[string]any{
 				"id":         inst.Workflow.ID,
 				"name":       inst.Workflow.Name,
@@ -253,36 +640,30 @@ func NewRouter() *gin.Engine {
 
 	r.POST("/instances/:id/enqueue", func(c *gin.Context) {
 		id := c.Param("id")
-		// Expect {"data": {nodeID: [{...}]}}
 		var body map[string]any
 		if err := c.ShouldBindJSON(&body); err != nil {
 			sendError(c, http.StatusBadRequest, "invalid json")
 			return
 		}
-		if raw, ok := body["data"]; ok {
-			// inputs is map[string][]map[string]any for compatibility (avoid model import error)
-			inputs := map[string][]map[string]any{}
-			if m, ok := raw.(map[string]any); ok {
-				for k, v := range m {
-					if arr, ok := v.([]any); ok {
-						items := make([]map[string]any, 0, len(arr))
-						for _, it := range arr {
-							if obj, ok := it.(map[string]any); ok {
-								items = append(items, obj)
-							}
-						}
-						inputs[k] = items
-					}
-				}
-			}
-			if err := mgr.Enqueue(id, inputs); err != nil {
-				sendError(c, http.StatusBadRequest, err.Error())
-				return
-			}
-			sendSuccess(c, map[string]any{"enqueued": true})
+		raw, ok := body["data"]
+		if !ok {
+			sendError(c, http.StatusBadRequest, "missing data field: expected {data: {...}}")
 			return
 		}
-		sendError(c, http.StatusBadRequest, "missing data field: expected {data: {...}}")
+		inputs, err := parseInputData(raw)
+		if err != nil {
+			sendError(c, http.StatusBadRequest, "data must look like {nodeId: [{...}]}")
+			return
+		}
+		converted := map[string]model.Items{}
+		for k, v := range inputs {
+			converted[string(k)] = v
+		}
+		if err := mgr.Enqueue(id, converted); err != nil {
+			sendError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"enqueued": true})
 	})
 
 	r.GET("/dashboard/metrics", func(c *gin.Context) {

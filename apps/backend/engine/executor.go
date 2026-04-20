@@ -83,6 +83,7 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 	order, _, _ := topo(wf)
 	succ := successorsWithPorts(wf)
 	pred := predecessorsWithPorts(wf)
+	e.Deps.Bus.Emit(ctx, "execution_started", map[string]any{"exec": execID, "workflow": wf.ID, "at": time.Now().UTC()})
 
 	// inbound buffers per node/port
 	inbound := make(map[model.ID]map[model.Port]model.Items)
@@ -105,9 +106,14 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 		}
 		handler, ok := plugin.New(node.Type)
 		if !ok {
-			return nil, fmt.Errorf("unknown node type: %s", node.Type)
+			err := fmt.Errorf("unknown node type: %s", node.Type)
+			e.Deps.Bus.Emit(ctx, "node_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error()})
+			e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error(), "at": time.Now().UTC()})
+			return nil, err
 		}
 		if err := handler.Init(ctx, e.Deps); err != nil {
+			e.Deps.Bus.Emit(ctx, "node_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error()})
+			e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error(), "at": time.Now().UTC()})
 			return nil, err
 		}
 
@@ -133,7 +139,10 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 				// For WaitAll, ensure all predecessors sent something (if there are predecessors)
 				if opts.FanIn == FanInWaitAll {
 					if len(pred[nodeID]) > 0 && len(src) == 0 {
-						return nil, fmt.Errorf("wait_all: missing inputs for node %s", nodeID)
+						err := fmt.Errorf("wait_all: missing inputs for node %s", nodeID)
+						e.Deps.Bus.Emit(ctx, "node_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error()})
+						e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error(), "at": time.Now().UTC()})
+						return nil, err
 					}
 				}
 				in = append(in, src...)
@@ -224,6 +233,8 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 		}
 		wg.Wait()
 		if procErr != nil {
+			e.Deps.Bus.Emit(ctx, "node_failed", map[string]any{"exec": execID, "node": node.ID, "error": procErr.Error()})
+			e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": procErr.Error(), "at": time.Now().UTC()})
 			return nil, procErr
 		}
 

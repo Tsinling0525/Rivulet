@@ -18,6 +18,18 @@ func ensureDir(path string) error { return os.MkdirAll(path, 0o755) }
 // WorkflowsDir is the directory storing workflow JSON files
 func WorkflowsDir() string { return filepath.Join(DataDir(), "workflows") }
 
+// StoreDir is the base directory for file-backed metadata persistence.
+func StoreDir() string { return filepath.Join(DataDir(), "store") }
+
+// WorkflowStoreDir is the directory storing versioned workflow definitions.
+func WorkflowStoreDir() string { return filepath.Join(StoreDir(), "workflows") }
+
+// RunHistoryDir is the directory storing persisted execution history.
+func RunHistoryDir() string { return filepath.Join(StoreDir(), "runs") }
+
+// ScheduleStoreDir is the directory storing persisted workflow schedules.
+func ScheduleStoreDir() string { return filepath.Join(StoreDir(), "schedules") }
+
 // ScriptsDir is the directory to store Python scripts
 func ScriptsDir() string { return filepath.Join(DataDir(), "scripts") }
 

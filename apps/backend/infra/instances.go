@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Tsinling0525/rivulet/engine"
 	"github.com/Tsinling0525/rivulet/format/n8n"
 	apiinfra "github.com/Tsinling0525/rivulet/infra/api"
 	"github.com/Tsinling0525/rivulet/model"
@@ -23,12 +22,16 @@ const (
 )
 
 type Instance struct {
-	ID           string
-	Name         string
-	WorkflowPath string
-	Workflow     model.Workflow
-	CreatedAt    time.Time
-	State        InstanceState
+	ID              string
+	Name            string
+	WorkflowPath    string
+	WorkflowID      string
+	WorkflowVersion int
+	Workflow        model.Workflow
+	WorkflowRequest n8n.N8nRequest
+	WorkflowRaw     []byte
+	CreatedAt       time.Time
+	State           InstanceState
 
 	q       chan map[model.ID]model.Items
 	cancel  context.CancelFunc
@@ -70,13 +73,20 @@ type InstanceStats struct {
 
 // ExecutionRecord captures the latest execution details for UI inspection.
 type ExecutionRecord struct {
-	ExecutionID string                   `json:"execution_id"`
-	StartedAt   time.Time                `json:"started_at"`
-	FinishedAt  time.Time                `json:"finished_at"`
-	DurationMS  int64                    `json:"duration_ms"`
-	Input       map[model.ID]model.Items `json:"input,omitempty"`
-	Result      map[model.ID]model.Items `json:"result,omitempty"`
-	Error       string                   `json:"error,omitempty"`
+	ExecutionID     string                   `json:"execution_id"`
+	Status          string                   `json:"status,omitempty"`
+	WorkflowID      string                   `json:"workflow_id,omitempty"`
+	WorkflowVersion int                      `json:"workflow_version,omitempty"`
+	Source          string                   `json:"source,omitempty"`
+	Trigger         string                   `json:"trigger,omitempty"`
+	ScheduleID      string                   `json:"schedule_id,omitempty"`
+	StartedAt       time.Time                `json:"started_at"`
+	FinishedAt      time.Time                `json:"finished_at"`
+	DurationMS      int64                    `json:"duration_ms"`
+	Input           map[model.ID]model.Items `json:"input,omitempty"`
+	Result          map[model.ID]model.Items `json:"result,omitempty"`
+	Error           string                   `json:"error,omitempty"`
+	Events          []RunEvent               `json:"events,omitempty"`
 }
 
 // ActiveExecution describes the current in-flight execution, if any.
@@ -117,18 +127,22 @@ func (i *Instance) Snapshot() InstanceSnapshot {
 }
 
 type InstanceManager struct {
-	mu    sync.Mutex
-	items map[string]*Instance
-	deps  plugin.Deps
-	newID func() string
+	mu        sync.Mutex
+	items     map[string]*Instance
+	deps      plugin.Deps
+	workflows *WorkflowStore
+	runs      *RunStore
+	newID     func() string
 }
 
-func NewInstanceManager() *InstanceManager {
+func NewInstanceManager(workflows *WorkflowStore, runs *RunStore) *InstanceManager {
 	deps := plugin.Deps{State: apiinfra.MemState{}, Bus: apiinfra.NullBus{}, Files: NewLocalFiles()}
 	return &InstanceManager{
-		items: make(map[string]*Instance),
-		deps:  deps,
-		newID: func() string { return fmt.Sprintf("inst-%d", time.Now().UnixNano()) },
+		items:     make(map[string]*Instance),
+		deps:      deps,
+		workflows: workflows,
+		runs:      runs,
+		newID:     func() string { return fmt.Sprintf("inst-%d", time.Now().UnixNano()) },
 	}
 }
 
@@ -158,27 +172,55 @@ func (m *InstanceManager) CreateFromWorkflowPath(path string) (*Instance, error)
 	if err := json.Unmarshal(b, &req); err != nil {
 		return nil, err
 	}
+	return m.createFromRequest(path, "", 0, req, b)
+}
+
+func (m *InstanceManager) CreateFromWorkflowID(id string, version int) (*Instance, error) {
+	if m.workflows == nil {
+		return nil, fmt.Errorf("workflow store not configured")
+	}
+	record, req, err := m.workflows.LoadVersionRequest(id, version)
+	if err != nil {
+		return nil, err
+	}
+	actualVersion := version
+	if actualVersion == 0 {
+		actualVersion = record.ActiveVersion
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return m.createFromRequest("", id, actualVersion, req, raw)
+}
+
+func (m *InstanceManager) createFromRequest(path, workflowID string, version int, req n8n.N8nRequest, raw []byte) (*Instance, error) {
 	wf, inputs := n8n.ToRivulet(req)
+	if workflowID == "" {
+		workflowID = string(wf.ID)
+	}
 
 	inst := &Instance{
-		ID:           m.newID(),
-		Name:         wf.Name,
-		WorkflowPath: path,
-		Workflow:     wf,
-		CreatedAt:    time.Now(),
-		State:        InstanceRunning,
-		q:            make(chan map[model.ID]model.Items, 64),
-		deps:         m.deps,
-		maxLogs:      1000,
+		ID:              m.newID(),
+		Name:            wf.Name,
+		WorkflowPath:    path,
+		WorkflowID:      workflowID,
+		WorkflowVersion: version,
+		Workflow:        wf,
+		WorkflowRequest: req,
+		WorkflowRaw:     append([]byte(nil), raw...),
+		CreatedAt:       time.Now(),
+		State:           InstanceRunning,
+		q:               make(chan map[model.ID]model.Items, 64),
+		deps:            m.deps,
+		maxLogs:         1000,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	inst.cancel = cancel
-	eng := engine.New(m.deps)
 
 	go func() {
 		inst.logf("instance started: %s", inst.ID)
-		// Auto-enqueue initial inputs from the workflow file if present
 		if len(inputs) > 0 {
 			select {
 			case inst.q <- inputs:
@@ -193,9 +235,9 @@ func (m *InstanceManager) CreateFromWorkflowPath(path string) (*Instance, error)
 				inst.logf("instance stopped: %s", inst.ID)
 				return
 			case inputs := <-inst.q:
-				execID := fmt.Sprintf("exec-%d", time.Now().UnixNano())
+				execID := newRunID()
 				inst.logf("execution started: %s", execID)
-				start := time.Now()
+				start := time.Now().UTC()
 				inst.statsMu.Lock()
 				inst.active = ActiveExecution{
 					ExecutionID: execID,
@@ -203,34 +245,36 @@ func (m *InstanceManager) CreateFromWorkflowPath(path string) (*Instance, error)
 					IsExecuting: true,
 				}
 				inst.statsMu.Unlock()
-				res, err := eng.Run(ctx, execID, inst.Workflow, inputs)
-				duration := time.Since(start)
+
+				outcome, err := ExecuteWorkflow(ctx, inst.deps, m.runs, ExecuteRequest{
+					RunID:           execID,
+					WorkflowID:      inst.WorkflowID,
+					WorkflowVersion: inst.WorkflowVersion,
+					WorkflowRequest: inst.WorkflowRequest,
+					RawRequest:      inst.WorkflowRaw,
+					Inputs:          inputs,
+					Source:          "instance",
+					Trigger:         "instance_enqueue",
+					InstanceID:      inst.ID,
+				})
+
 				inst.statsMu.Lock()
 				inst.stats.TotalExecutions++
-				inst.stats.LastRunAt = time.Now()
-				inst.lastRun = ExecutionRecord{
-					ExecutionID: execID,
-					StartedAt:   start,
-					FinishedAt:  time.Now(),
-					DurationMS:  duration.Milliseconds(),
-					Input:       cloneItemsMap(inputs),
-				}
+				inst.stats.LastRunAt = time.Now().UTC()
+				inst.lastRun = executionRecordFromRun(outcome.Run)
 				inst.active = ActiveExecution{}
 				if err != nil {
 					inst.stats.FailedExecutions++
-					inst.lastRun.Error = err.Error()
 					inst.statsMu.Unlock()
 					inst.logf("execution %s error: %v", execID, err)
 					continue
 				}
 				inst.stats.SuccessfulExecutions++
-				inst.stats.TotalSuccessDuration += duration
-				inst.lastRun.Result = cloneItemsMap(res)
+				inst.stats.TotalSuccessDuration += time.Duration(outcome.Run.DurationMS) * time.Millisecond
 				inst.statsMu.Unlock()
 
-				// summarize results
 				total := 0
-				for _, items := range res {
+				for _, items := range outcome.Result {
 					total += len(items)
 				}
 				inst.logf("execution %s completed, total items: %d", execID, total)
@@ -242,25 +286,6 @@ func (m *InstanceManager) CreateFromWorkflowPath(path string) (*Instance, error)
 	m.items[inst.ID] = inst
 	m.mu.Unlock()
 	return inst, nil
-}
-
-func cloneItemsMap(src map[model.ID]model.Items) map[model.ID]model.Items {
-	if src == nil {
-		return nil
-	}
-	out := make(map[model.ID]model.Items, len(src))
-	for k, items := range src {
-		clonedItems := make(model.Items, 0, len(items))
-		for _, item := range items {
-			cloned := model.Item{}
-			for field, value := range item {
-				cloned[field] = value
-			}
-			clonedItems = append(clonedItems, cloned)
-		}
-		out[k] = clonedItems
-	}
-	return out
 }
 
 func (m *InstanceManager) Stop(id string) error {
@@ -308,4 +333,23 @@ func (m *InstanceManager) Logs(id string) ([]string, error) {
 	out := make([]string, len(inst.logs))
 	copy(out, inst.logs)
 	return out, nil
+}
+
+func executionRecordFromRun(run RunRecord) ExecutionRecord {
+	return ExecutionRecord{
+		ExecutionID:     run.ID,
+		Status:          run.Status,
+		WorkflowID:      run.WorkflowID,
+		WorkflowVersion: run.WorkflowVersion,
+		Source:          run.Source,
+		Trigger:         run.Trigger,
+		ScheduleID:      run.ScheduleID,
+		StartedAt:       run.StartedAt,
+		FinishedAt:      run.FinishedAt,
+		DurationMS:      run.DurationMS,
+		Input:           cloneItemsMap(run.Input),
+		Result:          cloneItemsMap(run.Result),
+		Error:           run.Error,
+		Events:          append([]RunEvent(nil), run.Events...),
+	}
 }

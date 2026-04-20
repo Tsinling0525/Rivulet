@@ -178,7 +178,7 @@ data/files/image_to_latex_workflow/
 - Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the FlowTracker dashboard powered by `apps/frontend/index.html`.
 - The UI is served directly by the Go API (configurable via `RIV_FRONTEND_DIR`) so the backend and frontend ship together in the monorepo.
 - The dashboard view calls `/dashboard/metrics`, which aggregates execution stats from `infra.InstanceManager`—success/fail counts, queue depth, and per-instance timings.
-- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, and `/instances/:id/enqueue` so you can create instances, enqueue sample data, and inspect the latest execution result from the browser.
+- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, `/instances/:id/enqueue`, `/runs`, and `/schedules` so you can create instances, enqueue sample data, inspect recent persisted runs, replay a prior execution, and manage interval schedules from the browser.
 - Extend the cards by enhancing `infra.DashboardMetrics()` and updating the frontend HTML, or replace the static assets with a compiled SPA that targets the same endpoint.
 
 ### 10. Current API Surface
@@ -188,11 +188,16 @@ The API currently exposes:
 - `GET /health`
 - `POST /workflow/start` for one-shot execution of an n8n-style payload
 - `GET /workflows/files` to list workflow JSON files under `data/workflows`
+- `GET /workflows`, `POST /workflows`, `GET /workflows/:id`
+- `POST /workflows/:id/versions`, `POST /workflows/:id/activate`, `GET /workflows/:id/versions/:version`
+- `GET /runs`, `GET /runs/:id`, `POST /runs/:id/replay`
+- `GET /schedules`, `POST /schedules`, `GET /schedules/:id`
+- `POST /schedules/:id/pause`, `POST /schedules/:id/resume`, `DELETE /schedules/:id`
 - `POST /instances`, `GET /instances`, `GET /instances/:id`
 - `POST /instances/:id/stop`, `GET /instances/:id/logs`, `POST /instances/:id/enqueue`
 - `GET /dashboard/metrics`
 
-There is no persisted workflow CRUD layer yet; instance management is currently in-memory.
+Persisted workflow versions, run history, and interval schedules are stored on disk under `data/store/`. Managed instances themselves remain in-memory.
 
 #### Python Script Example
 
