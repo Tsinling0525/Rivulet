@@ -30,23 +30,25 @@ type RunEvent struct {
 }
 
 type RunRecord struct {
-	ID              string                   `json:"id"`
-	WorkflowID      string                   `json:"workflow_id,omitempty"`
-	WorkflowName    string                   `json:"workflow_name,omitempty"`
-	WorkflowVersion int                      `json:"workflow_version,omitempty"`
-	Source          string                   `json:"source,omitempty"`
-	Trigger         string                   `json:"trigger,omitempty"`
-	InstanceID      string                   `json:"instance_id,omitempty"`
-	ScheduleID      string                   `json:"schedule_id,omitempty"`
-	Status          string                   `json:"status"`
-	StartedAt       time.Time                `json:"started_at"`
-	FinishedAt      time.Time                `json:"finished_at"`
-	DurationMS      int64                    `json:"duration_ms"`
-	Input           map[model.ID]model.Items `json:"input,omitempty"`
-	Result          map[model.ID]model.Items `json:"result,omitempty"`
-	Error           string                   `json:"error,omitempty"`
-	Events          []RunEvent               `json:"events,omitempty"`
-	WorkflowRequest json.RawMessage          `json:"workflow_request"`
+	ID              string                    `json:"id"`
+	WorkflowID      string                    `json:"workflow_id,omitempty"`
+	WorkflowName    string                    `json:"workflow_name,omitempty"`
+	WorkflowKind    model.WorkflowKind        `json:"workflow_kind,omitempty"`
+	AI              *model.AIWorkflowMetadata `json:"ai,omitempty"`
+	WorkflowVersion int                       `json:"workflow_version,omitempty"`
+	Source          string                    `json:"source,omitempty"`
+	Trigger         string                    `json:"trigger,omitempty"`
+	InstanceID      string                    `json:"instance_id,omitempty"`
+	ScheduleID      string                    `json:"schedule_id,omitempty"`
+	Status          string                    `json:"status"`
+	StartedAt       time.Time                 `json:"started_at"`
+	FinishedAt      time.Time                 `json:"finished_at"`
+	DurationMS      int64                     `json:"duration_ms"`
+	Input           map[model.ID]model.Items  `json:"input,omitempty"`
+	Result          map[model.ID]model.Items  `json:"result,omitempty"`
+	Error           string                    `json:"error,omitempty"`
+	Events          []RunEvent                `json:"events,omitempty"`
+	WorkflowRequest json.RawMessage           `json:"workflow_request"`
 }
 
 type RunStore struct {
@@ -197,6 +199,8 @@ func ExecuteWorkflow(ctx context.Context, deps plugin.Deps, store *RunStore, req
 		ID:              req.RunID,
 		WorkflowID:      workflowID,
 		WorkflowName:    workflow.Name,
+		WorkflowKind:    workflow.Kind,
+		AI:              workflow.AI,
 		WorkflowVersion: req.WorkflowVersion,
 		Source:          req.Source,
 		Trigger:         req.Trigger,

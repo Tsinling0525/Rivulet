@@ -2,10 +2,14 @@
 
 A lightweight, n8n-inspired workflow engine written in Go. Rivulet provides a node-based workflow system with plugin architecture, state management, and event-driven execution.
 
+Rivulet treats AI workflows as a first-class workflow kind, not just generic automation with an LLM HTTP call. Workflows can declare `kind: "ai_workflow"` and AI metadata such as purpose, model inventory, risk level, and whether human review is required. AI nodes emit `ai_model_call` run events with provider/model, prompt hash, prompt preview, token usage when available, latency, and status.
+
 ## 🚀 Features
 
 - **Node-based Workflows** - Visual workflow composition with nodes and edges
 - **Plugin Architecture** - Extensible node system for custom functionality
+- **AI Workflow Identity** - First-class AI metadata for purpose, models, risk, and review policy
+- **AI Observability** - Model-call events capture provider/model, prompt hash, tokens, latency, and status
 - **State Management** - Persistent node state across workflow executions
 - **Event-driven** - Observable execution flow with event bus
 - **Type-safe** - Strong typing with Go's type system
@@ -102,6 +106,41 @@ curl -X POST http://localhost:8080/workflow/start \
       "echo1": [{"message": "test"}]
     }
   }'
+```
+
+AI workflows can declare intent and review policy directly on the workflow:
+
+```json
+{
+  "workflow": {
+    "id": "support-triage",
+    "name": "Support Triage",
+    "kind": "ai_workflow",
+    "ai": {
+      "purpose": "Classify support tickets and draft replies",
+      "models": ["gpt-5-mini"],
+      "risk_level": "medium",
+      "human_review_required": true
+    },
+    "nodes": [
+      {
+        "id": "draft",
+        "name": "Draft Reply",
+        "type": "chatgpt",
+        "parameters": {
+          "model": "gpt-5-mini",
+          "prompt": "Draft a reply for {{.message}}",
+          "human_review_required": true
+        }
+      }
+    ],
+    "connections": {},
+    "settings": {}
+  },
+  "data": {
+    "draft": [{ "message": "I need help with my invoice." }]
+  }
+}
 ```
 
 ### 5. Check Health

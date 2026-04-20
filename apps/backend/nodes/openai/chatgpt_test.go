@@ -72,7 +72,7 @@ func TestBuildPayloadKeepsLegacyChatCompletionsCompatibility(t *testing.T) {
 
 func TestExtractOutputParsesResponsesOutputText(t *testing.T) {
 	n := &ChatGPTNode{}
-	body := []byte(`{"output_text":"rewritten text"}`)
+	body := []byte(`{"output_text":"rewritten text","usage":{"input_tokens":12,"output_tokens":5,"total_tokens":17}}`)
 
 	out, err := n.extractOutput("https://api.openai.com/v1/responses", body)
 	if err != nil {
@@ -81,11 +81,19 @@ func TestExtractOutputParsesResponsesOutputText(t *testing.T) {
 	if out != "rewritten text" {
 		t.Fatalf("expected rewritten text, got %q", out)
 	}
+
+	_, usage, err := n.extractOutputWithUsage("https://api.openai.com/v1/responses", body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usage.Input != 12 || usage.Output != 5 || usage.Total != 17 {
+		t.Fatalf("unexpected usage: %+v", usage)
+	}
 }
 
 func TestExtractOutputParsesLegacyChatCompletions(t *testing.T) {
 	n := &ChatGPTNode{}
-	body := []byte(`{"choices":[{"message":{"content":"legacy text"}}]}`)
+	body := []byte(`{"choices":[{"message":{"content":"legacy text"}}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}`)
 
 	out, err := n.extractOutput("https://api.openai.com/v1/chat/completions", body)
 	if err != nil {
@@ -93,5 +101,34 @@ func TestExtractOutputParsesLegacyChatCompletions(t *testing.T) {
 	}
 	if out != "legacy text" {
 		t.Fatalf("expected legacy text, got %q", out)
+	}
+
+	_, usage, err := n.extractOutputWithUsage("https://api.openai.com/v1/chat/completions", body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usage.Input != 9 || usage.Output != 4 || usage.Total != 13 {
+		t.Fatalf("unexpected usage: %+v", usage)
+	}
+}
+
+func TestAIMetadataReflectsNodeConfig(t *testing.T) {
+	node := model.Node{
+		Config: map[string]any{
+			"model":                 "gpt-5.4-mini",
+			"prompt":                "Draft a reply to {{.message}}",
+			"human_review_required": true,
+		},
+	}
+
+	metadata := (&ChatGPTNode{}).AIMetadata(model.Workflow{}, node)
+	if metadata.Provider != "openai" {
+		t.Fatalf("expected provider openai, got %q", metadata.Provider)
+	}
+	if metadata.Model != "gpt-5.4-mini" {
+		t.Fatalf("expected configured model, got %q", metadata.Model)
+	}
+	if !metadata.HumanReviewRequired {
+		t.Fatalf("expected human review requirement")
 	}
 }

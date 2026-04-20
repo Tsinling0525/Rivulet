@@ -17,6 +17,12 @@ import (
 	"github.com/Tsinling0525/rivulet/plugin"
 )
 
+type tokenUsage struct {
+	Input  int
+	Output int
+	Total  int
+}
+
 type ChatGPTNode struct {
 	llm.LLMNodeBase
 	cfg    llm.LLMConfig
@@ -74,23 +80,30 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+n.apiKey)
+		start := time.Now()
 		resp, err := client.Do(req)
 		if err != nil {
+			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), err)
 			return nil, err
 		}
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
+			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), readErr)
 			return nil, readErr
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("openai error: status %s body=%s", resp.Status, strings.TrimSpace(string(body)))
-		}
-
-		content, err := n.extractOutput(n.cfg.Endpoint, body)
-		if err != nil {
+			err := fmt.Errorf("openai error: status %s body=%s", resp.Status, strings.TrimSpace(string(body)))
+			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), err)
 			return nil, err
 		}
+
+		content, usage, err := n.extractOutputWithUsage(n.cfg.Endpoint, body)
+		if err != nil {
+			n.emitCall(ctx, wf, node, prompt, "", usage, time.Since(start), err)
+			return nil, err
+		}
+		n.emitCall(ctx, wf, node, prompt, content, usage, time.Since(start), nil)
 
 		out = append(out, model.Item{
 			"prompt":  prompt,
@@ -100,6 +113,46 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 		})
 	}
 	return out, nil
+}
+
+func (n *ChatGPTNode) AIMetadata(wf model.Workflow, node model.Node) model.AINodeMetadata {
+	modelName, _ := node.Config["model"].(string)
+	if modelName == "" {
+		modelName = "gpt-5-mini"
+	}
+	prompt, _ := node.Config["prompt"].(string)
+	humanReview, _ := node.Config["human_review_required"].(bool)
+	return model.AINodeMetadata{
+		Provider:            "openai",
+		Model:               modelName,
+		PromptTemplate:      prompt,
+		HumanReviewRequired: humanReview,
+	}
+}
+
+func (n *ChatGPTNode) emitCall(ctx context.Context, wf model.Workflow, node model.Node, prompt, output string, usage tokenUsage, latency time.Duration, callErr error) {
+	status := "succeeded"
+	errText := ""
+	if callErr != nil {
+		status = "failed"
+		errText = callErr.Error()
+	}
+	humanReview, _ := node.Config["human_review_required"].(bool)
+	n.EmitAIModelCall(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIModelCall{
+		Provider:      "openai",
+		Model:         n.cfg.Model,
+		Endpoint:      n.cfg.Endpoint,
+		PromptHash:    llm.PromptHash(prompt),
+		PromptPreview: llm.Preview(prompt, 300),
+		OutputPreview: llm.Preview(output, 300),
+		InputTokens:   usage.Input,
+		OutputTokens:  usage.Output,
+		TotalTokens:   usage.Total,
+		LatencyMS:     latency.Milliseconds(),
+		Status:        status,
+		Error:         errText,
+		HumanReview:   humanReview,
+	})
 }
 
 func (n *ChatGPTNode) buildPayload(node model.Node, prompt string) map[string]any {
@@ -137,6 +190,11 @@ func (n *ChatGPTNode) buildPayload(node model.Node, prompt string) map[string]an
 }
 
 func (n *ChatGPTNode) extractOutput(endpoint string, body []byte) (string, error) {
+	output, _, err := n.extractOutputWithUsage(endpoint, body)
+	return output, err
+}
+
+func (n *ChatGPTNode) extractOutputWithUsage(endpoint string, body []byte) (string, tokenUsage, error) {
 	if strings.Contains(endpoint, "/chat/completions") {
 		var parsed struct {
 			Choices []struct {
@@ -144,14 +202,24 @@ func (n *ChatGPTNode) extractOutput(endpoint string, body []byte) (string, error
 					Content string `json:"content"`
 				} `json:"message"`
 			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(body, &parsed); err != nil {
-			return "", err
+			return "", tokenUsage{}, err
+		}
+		usage := tokenUsage{
+			Input:  parsed.Usage.PromptTokens,
+			Output: parsed.Usage.CompletionTokens,
+			Total:  parsed.Usage.TotalTokens,
 		}
 		if len(parsed.Choices) == 0 {
-			return "", nil
+			return "", usage, nil
 		}
-		return parsed.Choices[0].Message.Content, nil
+		return parsed.Choices[0].Message.Content, usage, nil
 	}
 
 	var parsed struct {
@@ -162,21 +230,31 @@ func (n *ChatGPTNode) extractOutput(endpoint string, body []byte) (string, error
 				Text string `json:"text"`
 			} `json:"content"`
 		} `json:"output"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
+		return "", tokenUsage{}, err
+	}
+	usage := tokenUsage{
+		Input:  parsed.Usage.InputTokens,
+		Output: parsed.Usage.OutputTokens,
+		Total:  parsed.Usage.TotalTokens,
 	}
 	if parsed.OutputText != "" {
-		return parsed.OutputText, nil
+		return parsed.OutputText, usage, nil
 	}
 	for _, output := range parsed.Output {
 		for _, content := range output.Content {
 			if content.Type == "output_text" || content.Type == "text" {
-				return content.Text, nil
+				return content.Text, usage, nil
 			}
 		}
 	}
-	return "", nil
+	return "", usage, nil
 }
 
 func intFromAny(v any) (int, bool) {

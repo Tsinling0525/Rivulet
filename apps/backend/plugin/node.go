@@ -6,6 +6,19 @@ import (
 	"github.com/Tsinling0525/rivulet/model"
 )
 
+type contextKey string
+
+const executionIDKey contextKey = "rivulet_execution_id"
+
+func WithExecutionID(ctx context.Context, execID string) context.Context {
+	return context.WithValue(ctx, executionIDKey, execID)
+}
+
+func ExecutionIDFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(executionIDKey).(string)
+	return value
+}
+
 type Deps struct {
 	State StateStore
 	Bus   EventBus
@@ -15,6 +28,10 @@ type Deps struct {
 type NodeHandler interface {
 	Init(ctx context.Context, deps Deps) error
 	Process(ctx context.Context, wf model.Workflow, node model.Node, in model.Items) (model.Items, error)
+}
+
+type AIMetadataProvider interface {
+	AIMetadata(wf model.Workflow, node model.Node) model.AINodeMetadata
 }
 
 type StateStore interface {

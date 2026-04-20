@@ -123,6 +123,8 @@ func workflowSummary(record infra.StoredWorkflow) map[string]any {
 	return map[string]any{
 		"id":             record.ID,
 		"name":           record.Name,
+		"kind":           record.Kind,
+		"ai":             record.AI,
 		"description":    record.Description,
 		"active_version": record.ActiveVersion,
 		"created_at":     record.CreatedAt,
@@ -146,6 +148,8 @@ func workflowDetail(record infra.StoredWorkflow) map[string]any {
 	return map[string]any{
 		"id":             record.ID,
 		"name":           record.Name,
+		"kind":           record.Kind,
+		"ai":             record.AI,
 		"description":    record.Description,
 		"active_version": record.ActiveVersion,
 		"created_at":     record.CreatedAt,
@@ -592,6 +596,8 @@ func NewRouter() *gin.Engine {
 			"workflow": map[string]any{
 				"id":         inst.Workflow.ID,
 				"name":       inst.Workflow.Name,
+				"kind":       inst.Workflow.Kind,
+				"ai":         inst.Workflow.AI,
 				"node_count": len(inst.Workflow.Nodes),
 				"edge_count": len(inst.Workflow.Edges),
 				"nodes": func() []map[string]any {

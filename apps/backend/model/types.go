@@ -27,9 +27,35 @@ type Node struct {
 	Credentials string // reference key
 }
 
+type WorkflowKind string
+
+const (
+	WorkflowKindAutomation WorkflowKind = "automation"
+	WorkflowKindAI         WorkflowKind = "ai_workflow"
+	WorkflowKindData       WorkflowKind = "data_pipeline"
+)
+
+type AIWorkflowMetadata struct {
+	Purpose             string   `json:"purpose,omitempty"`
+	Models              []string `json:"models,omitempty"`
+	RiskLevel           string   `json:"risk_level,omitempty"`
+	HumanReviewRequired bool     `json:"human_review_required,omitempty"`
+}
+
+type AINodeMetadata struct {
+	Provider            string   `json:"provider,omitempty"`
+	Model               string   `json:"model,omitempty"`
+	PromptTemplate      string   `json:"prompt_template,omitempty"`
+	InputFields         []string `json:"input_fields,omitempty"`
+	OutputSchema        any      `json:"output_schema,omitempty"`
+	HumanReviewRequired bool     `json:"human_review_required,omitempty"`
+}
+
 type Workflow struct {
 	ID    ID
 	Name  string
+	Kind  WorkflowKind
+	AI    *AIWorkflowMetadata
 	Nodes []Node
 	Edges []Edge
 }

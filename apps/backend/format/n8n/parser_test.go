@@ -78,6 +78,37 @@ func TestParseWorkflow(t *testing.T) {
 	}
 }
 
+func TestParseWorkflowPreservesAIMetadata(t *testing.T) {
+	n8nWF := N8nWorkflow{
+		ID:   "ai-workflow",
+		Name: "AI Workflow",
+		Kind: "ai_workflow",
+		AI: &model.AIWorkflowMetadata{
+			Purpose:             "Draft customer replies",
+			Models:              []string{"gpt-5-mini"},
+			RiskLevel:           "medium",
+			HumanReviewRequired: true,
+		},
+		Nodes: []N8nNode{
+			{ID: "draft", Name: "Draft", Type: "chatgpt", Parameters: map[string]interface{}{"model": "gpt-5-mini"}},
+		},
+	}
+
+	workflow := ParseWorkflow(n8nWF)
+	if workflow.Kind != model.WorkflowKindAI {
+		t.Fatalf("expected ai_workflow kind, got %q", workflow.Kind)
+	}
+	if workflow.AI == nil {
+		t.Fatalf("expected AI metadata")
+	}
+	if workflow.AI.Purpose != "Draft customer replies" {
+		t.Fatalf("expected AI purpose to be preserved, got %q", workflow.AI.Purpose)
+	}
+	if !workflow.AI.HumanReviewRequired {
+		t.Fatalf("expected human review requirement to be preserved")
+	}
+}
+
 func TestParseInputData(t *testing.T) {
 	inputData := map[string]interface{}{
 		"node1": []interface{}{

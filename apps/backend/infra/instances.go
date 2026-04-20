@@ -73,20 +73,22 @@ type InstanceStats struct {
 
 // ExecutionRecord captures the latest execution details for UI inspection.
 type ExecutionRecord struct {
-	ExecutionID     string                   `json:"execution_id"`
-	Status          string                   `json:"status,omitempty"`
-	WorkflowID      string                   `json:"workflow_id,omitempty"`
-	WorkflowVersion int                      `json:"workflow_version,omitempty"`
-	Source          string                   `json:"source,omitempty"`
-	Trigger         string                   `json:"trigger,omitempty"`
-	ScheduleID      string                   `json:"schedule_id,omitempty"`
-	StartedAt       time.Time                `json:"started_at"`
-	FinishedAt      time.Time                `json:"finished_at"`
-	DurationMS      int64                    `json:"duration_ms"`
-	Input           map[model.ID]model.Items `json:"input,omitempty"`
-	Result          map[model.ID]model.Items `json:"result,omitempty"`
-	Error           string                   `json:"error,omitempty"`
-	Events          []RunEvent               `json:"events,omitempty"`
+	ExecutionID     string                    `json:"execution_id"`
+	Status          string                    `json:"status,omitempty"`
+	WorkflowID      string                    `json:"workflow_id,omitempty"`
+	WorkflowKind    model.WorkflowKind        `json:"workflow_kind,omitempty"`
+	AI              *model.AIWorkflowMetadata `json:"ai,omitempty"`
+	WorkflowVersion int                       `json:"workflow_version,omitempty"`
+	Source          string                    `json:"source,omitempty"`
+	Trigger         string                    `json:"trigger,omitempty"`
+	ScheduleID      string                    `json:"schedule_id,omitempty"`
+	StartedAt       time.Time                 `json:"started_at"`
+	FinishedAt      time.Time                 `json:"finished_at"`
+	DurationMS      int64                     `json:"duration_ms"`
+	Input           map[model.ID]model.Items  `json:"input,omitempty"`
+	Result          map[model.ID]model.Items  `json:"result,omitempty"`
+	Error           string                    `json:"error,omitempty"`
+	Events          []RunEvent                `json:"events,omitempty"`
 }
 
 // ActiveExecution describes the current in-flight execution, if any.
@@ -340,6 +342,8 @@ func executionRecordFromRun(run RunRecord) ExecutionRecord {
 		ExecutionID:     run.ID,
 		Status:          run.Status,
 		WorkflowID:      run.WorkflowID,
+		WorkflowKind:    run.WorkflowKind,
+		AI:              run.AI,
 		WorkflowVersion: run.WorkflowVersion,
 		Source:          run.Source,
 		Trigger:         run.Trigger,

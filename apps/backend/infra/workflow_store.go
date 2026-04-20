@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Tsinling0525/rivulet/format/n8n"
+	"github.com/Tsinling0525/rivulet/model"
 )
 
 var ErrWorkflowNotFound = errors.New("workflow not found")
@@ -23,13 +24,15 @@ type StoredWorkflowVersion struct {
 }
 
 type StoredWorkflow struct {
-	ID            string                  `json:"id"`
-	Name          string                  `json:"name"`
-	Description   string                  `json:"description,omitempty"`
-	ActiveVersion int                     `json:"active_version"`
-	CreatedAt     time.Time               `json:"created_at"`
-	UpdatedAt     time.Time               `json:"updated_at"`
-	Versions      []StoredWorkflowVersion `json:"versions"`
+	ID            string                    `json:"id"`
+	Name          string                    `json:"name"`
+	Kind          model.WorkflowKind        `json:"kind,omitempty"`
+	AI            *model.AIWorkflowMetadata `json:"ai,omitempty"`
+	Description   string                    `json:"description,omitempty"`
+	ActiveVersion int                       `json:"active_version"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	UpdatedAt     time.Time                 `json:"updated_at"`
+	Versions      []StoredWorkflowVersion   `json:"versions"`
 }
 
 type WorkflowStore struct {
@@ -76,6 +79,8 @@ func (s *WorkflowStore) Create(req n8n.N8nRequest, description string, activate 
 	record := StoredWorkflow{
 		ID:            id,
 		Name:          name,
+		Kind:          workflowKindFromRequest(req),
+		AI:            req.Workflow.AI,
 		Description:   description,
 		ActiveVersion: 1,
 		CreatedAt:     now,
@@ -113,6 +118,8 @@ func (s *WorkflowStore) AddVersion(id string, req n8n.N8nRequest, activate bool)
 		number = record.Versions[len(record.Versions)-1].Number + 1
 	}
 	record.Name = req.Workflow.Name
+	record.Kind = workflowKindFromRequest(req)
+	record.AI = req.Workflow.AI
 	record.UpdatedAt = now
 	record.Versions = append(record.Versions, buildWorkflowVersion(number, req, now))
 	if activate || record.ActiveVersion == 0 {
@@ -262,4 +269,20 @@ func normalizeWorkflowIdentity(req n8n.N8nRequest) (string, string) {
 		name = id
 	}
 	return id, name
+}
+
+func workflowKindFromRequest(req n8n.N8nRequest) model.WorkflowKind {
+	if req.Workflow.Kind != "" {
+		return model.WorkflowKind(req.Workflow.Kind)
+	}
+	if req.Workflow.AI != nil {
+		return model.WorkflowKindAI
+	}
+	for _, node := range req.Workflow.Nodes {
+		switch node.Type {
+		case "chatgpt", "ollama":
+			return model.WorkflowKindAI
+		}
+	}
+	return model.WorkflowKindAutomation
 }

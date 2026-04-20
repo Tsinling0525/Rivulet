@@ -116,6 +116,13 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 			e.Deps.Bus.Emit(ctx, "execution_failed", map[string]any{"exec": execID, "node": node.ID, "error": err.Error(), "at": time.Now().UTC()})
 			return nil, err
 		}
+		if ai, ok := handler.(plugin.AIMetadataProvider); ok {
+			e.Deps.Bus.Emit(ctx, "ai_node_metadata", map[string]any{
+				"exec":     execID,
+				"node":     node.ID,
+				"metadata": ai.AIMetadata(wf, node),
+			})
+		}
 
 		// Build input with fan-in strategy on PortMain
 		opts := e.Options[nodeID]
@@ -161,6 +168,7 @@ func (e *Engine) Run(ctx context.Context, execID string, wf model.Workflow, inpu
 			runCtx, cancel = context.WithTimeout(ctx, node.Timeout)
 			defer cancel()
 		}
+		runCtx = plugin.WithExecutionID(runCtx, execID)
 
 		e.Deps.Bus.Emit(ctx, "node_started", map[string]any{"exec": execID, "node": node.ID})
 

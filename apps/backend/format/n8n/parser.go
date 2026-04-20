@@ -10,6 +10,8 @@ import (
 type N8nWorkflow struct {
 	ID          string                    `json:"id"`
 	Name        string                    `json:"name"`
+	Kind        string                    `json:"kind,omitempty"`
+	AI          *model.AIWorkflowMetadata `json:"ai,omitempty"`
 	Active      bool                      `json:"active"`
 	Nodes       []N8nNode                 `json:"nodes"`
 	Connections map[string]N8nConnections `json:"connections"`
@@ -96,9 +98,27 @@ func ParseWorkflow(n8nWF N8nWorkflow) model.Workflow {
 	return model.Workflow{
 		ID:    model.ID(n8nWF.ID),
 		Name:  n8nWF.Name,
+		Kind:  inferWorkflowKind(n8nWF),
+		AI:    n8nWF.AI,
 		Nodes: nodes,
 		Edges: edges,
 	}
+}
+
+func inferWorkflowKind(n8nWF N8nWorkflow) model.WorkflowKind {
+	if n8nWF.Kind != "" {
+		return model.WorkflowKind(n8nWF.Kind)
+	}
+	if n8nWF.AI != nil {
+		return model.WorkflowKindAI
+	}
+	for _, node := range n8nWF.Nodes {
+		switch node.Type {
+		case "chatgpt", "ollama":
+			return model.WorkflowKindAI
+		}
+	}
+	return model.WorkflowKindAutomation
 }
 
 // ParseInputData converts n8n input data to Rivulet format

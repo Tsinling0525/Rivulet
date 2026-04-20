@@ -1127,10 +1127,15 @@
                   <div class="result-card">
                     <div class="status-stack">
                       <span class="status-pill ${runStatusClass(run.status)}">${escapeHTML(run.status || "unknown")}</span>
-                      <span class="meta">${escapeHTML(run.source || "run")} · ${escapeHTML(run.trigger || "manual")}</span>
+                      <span class="meta">${escapeHTML(run.source || "run")} · ${escapeHTML(run.workflow_kind || "workflow")}</span>
                     </div>
                     <h4>${escapeHTML(run.workflow_name || run.workflow_id || run.id)}</h4>
                     <code>${escapeHTML(run.id)}</code>
+                    ${
+                      run.ai?.purpose
+                        ? `<div class="meta">AI purpose: ${escapeHTML(run.ai.purpose)}</div>`
+                        : ""
+                    }
                     <div class="meta">Started ${escapeHTML(startedAt)}</div>
                     <div class="meta">${escapeHTML(String(run.duration_ms ?? 0))} ms · ${eventCount} event${eventCount === 1 ? "" : "s"}</div>
                     ${
@@ -1331,6 +1336,7 @@
           : "--";
         const stats = instance.stats || {};
         const workflow = instance.workflow || {};
+        const ai = workflow.ai || {};
         const lastExecution = instance.last_execution || {};
         const executionStatus = instance.execution_status || {};
         const monitor =
@@ -1391,6 +1397,11 @@
                 <div class="helper">Workflow</div>
                 <strong>${workflow.name || "--"}</strong>
                 <code>${workflow.id || ""}</code>
+              </div>
+              <div class="detail-stat">
+                <div class="helper">Workflow Kind</div>
+                <strong>${workflow.kind || "automation"}</strong>
+                <code>${ai.purpose || "No AI purpose declared"}</code>
               </div>
               <div class="detail-stat">
                 <div class="helper">Queue</div>
