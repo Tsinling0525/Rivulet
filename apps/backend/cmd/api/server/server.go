@@ -18,6 +18,7 @@ import (
 	apiinfra "github.com/Tsinling0525/rivulet/infra/api"
 	"github.com/Tsinling0525/rivulet/model"
 	_ "github.com/Tsinling0525/rivulet/nodes/echo"
+	_ "github.com/Tsinling0525/rivulet/nodes/eval"
 	_ "github.com/Tsinling0525/rivulet/nodes/files"
 	_ "github.com/Tsinling0525/rivulet/nodes/fs"
 	_ "github.com/Tsinling0525/rivulet/nodes/http"

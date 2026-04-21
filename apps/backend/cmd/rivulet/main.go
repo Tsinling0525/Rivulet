@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tsinling0525/rivulet/cmd/api/server"
 	_ "github.com/Tsinling0525/rivulet/nodes/echo"
+	_ "github.com/Tsinling0525/rivulet/nodes/eval"
 	_ "github.com/Tsinling0525/rivulet/nodes/files"
 	_ "github.com/Tsinling0525/rivulet/nodes/fs"
 	_ "github.com/Tsinling0525/rivulet/nodes/http"

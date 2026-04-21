@@ -304,7 +304,38 @@ if __name__ == "__main__":
 - `merge.concat` – pass-through node (engine performs fan-in)
 - `ollama` – render a prompt and call a local Ollama model
 - `chatgpt` – render a prompt and call the OpenAI Responses API by default, with legacy Chat Completions compatibility when explicitly configured
+- `eval:node` – score upstream AI output with deterministic criteria or an OpenAI-compatible judge model, emitting `pass`/`fail` ports
 - `python:script` – run local Python script over an attached file and put stdout (e.g., LaTeX) into item
+
+Eval node config example:
+
+```json
+{
+  "id": "eval1",
+  "type": "eval:node",
+  "name": "Score AI Output",
+  "parameters": {
+    "target_field": "output",
+    "pass_threshold": 0.8,
+    "criteria": [
+      { "name": "mentions total", "type": "contains", "value": "total", "weight": 1 },
+      { "name": "no errors", "type": "not_contains", "value": "error", "weight": 1 }
+    ]
+  }
+}
+```
+
+Add a `judge` object when scoring should be delegated to a stronger model:
+
+```json
+{
+  "judge": {
+    "provider": "openai",
+    "model": "gpt-5",
+    "api_key_env": "OPENAI_API_KEY"
+  }
+}
+```
 
 Python node config example:
 
