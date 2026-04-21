@@ -114,7 +114,7 @@ func inferWorkflowKind(n8nWF N8nWorkflow) model.WorkflowKind {
 	}
 	for _, node := range n8nWF.Nodes {
 		switch node.Type {
-		case "chatgpt", "ollama":
+		case "chatgpt", "ollama", "llm:route":
 			return model.WorkflowKindAI
 		}
 	}

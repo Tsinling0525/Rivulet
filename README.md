@@ -244,6 +244,7 @@ The API currently exposes:
 - `GET /workflows/files` to list workflow JSON files under `data/workflows`
 - `GET /workflows`, `POST /workflows`, `GET /workflows/:id`
 - `POST /workflows/:id/versions`, `POST /workflows/:id/activate`, `GET /workflows/:id/versions/:version`
+- `POST /workflows/:id/prompts/:node_id/rollback` with `{ "prompt_hash": "sha256:..." }` to restore a prior prompt template as a new active workflow version
 - `GET /runs`, `GET /runs/:id`, `POST /runs/:id/replay`
 - `GET /schedules`, `POST /schedules`, `GET /schedules/:id`
 - `POST /schedules/:id/pause`, `POST /schedules/:id/resume`, `DELETE /schedules/:id`
@@ -304,9 +305,40 @@ if __name__ == "__main__":
 - `merge.concat` – pass-through node (engine performs fan-in)
 - `ollama` – render a prompt and call a local Ollama model
 - `chatgpt` – render a prompt and call the OpenAI Responses API by default, with legacy Chat Completions compatibility when explicitly configured
+- `llm:route` – dynamically choose a low-cost local or stronger remote model based on task complexity
 - `eval:node` – score upstream AI output with deterministic criteria or an OpenAI-compatible judge model, emitting `pass`/`fail` ports
 - `wasm:node` – run a WASI WebAssembly module as a custom node without recompiling the backend
 - `python:script` – run local Python script over an attached file and put stdout (e.g., LaTeX) into item
+
+Dynamic LLM routing example:
+
+```json
+{
+  "id": "router1",
+  "type": "llm:route",
+  "name": "Cost Aware LLM",
+  "parameters": {
+    "prompt": "Answer this task: {{.task}}",
+    "difficulty_field": "task_type",
+    "complexity_threshold": 0.55,
+    "semantic_cache": { "enabled": true, "threshold": 0.92 },
+    "routes": {
+      "simple": {
+        "provider": "ollama",
+        "model": "llama3.2",
+        "endpoint": "http://localhost:11434/api/generate"
+      },
+      "complex": {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "api_key_env": "OPENAI_API_KEY"
+      }
+    }
+  }
+}
+```
+
+`llm:route` also supports `provider: "anthropic"` for Claude-style routing. Semantic cache can also be enabled directly on `chatgpt` and `ollama` nodes with the same `semantic_cache` object. Cache entries are stored under `data/store/semantic_cache.json` unless `RIV_SEMANTIC_CACHE_PATH` is set.
 
 WASM node config example:
 

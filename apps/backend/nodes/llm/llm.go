@@ -35,20 +35,21 @@ type LLMNodeBase struct {
 }
 
 type AIModelCall struct {
-	Provider      string         `json:"provider"`
-	Model         string         `json:"model"`
-	Endpoint      string         `json:"endpoint,omitempty"`
-	PromptHash    string         `json:"prompt_hash"`
-	PromptPreview string         `json:"prompt_preview,omitempty"`
-	OutputPreview string         `json:"output_preview,omitempty"`
-	InputTokens   int            `json:"input_tokens,omitempty"`
-	OutputTokens  int            `json:"output_tokens,omitempty"`
-	TotalTokens   int            `json:"total_tokens,omitempty"`
-	LatencyMS     int64          `json:"latency_ms,omitempty"`
-	Status        string         `json:"status"`
-	Error         string         `json:"error,omitempty"`
-	HumanReview   bool           `json:"human_review_required,omitempty"`
-	Extra         map[string]any `json:"extra,omitempty"`
+	Provider           string         `json:"provider"`
+	Model              string         `json:"model"`
+	Endpoint           string         `json:"endpoint,omitempty"`
+	PromptHash         string         `json:"prompt_hash"`
+	PromptTemplateHash string         `json:"prompt_template_hash,omitempty"`
+	PromptPreview      string         `json:"prompt_preview,omitempty"`
+	OutputPreview      string         `json:"output_preview,omitempty"`
+	InputTokens        int            `json:"input_tokens,omitempty"`
+	OutputTokens       int            `json:"output_tokens,omitempty"`
+	TotalTokens        int            `json:"total_tokens,omitempty"`
+	LatencyMS          int64          `json:"latency_ms,omitempty"`
+	Status             string         `json:"status"`
+	Error              string         `json:"error,omitempty"`
+	HumanReview        bool           `json:"human_review_required,omitempty"`
+	Extra              map[string]any `json:"extra,omitempty"`
 }
 
 func (b *LLMNodeBase) Init(ctx context.Context, deps plugin.Deps) error { b.deps = deps; return nil }
@@ -84,6 +85,9 @@ func (b *LLMNodeBase) EmitAIModelCall(ctx context.Context, execID string, wf mod
 		"prompt_hash":   call.PromptHash,
 		"status":        call.Status,
 		"latency_ms":    call.LatencyMS,
+	}
+	if call.PromptTemplateHash != "" {
+		fields["prompt_template_hash"] = call.PromptTemplateHash
 	}
 	if call.PromptPreview != "" {
 		fields["prompt_preview"] = call.PromptPreview

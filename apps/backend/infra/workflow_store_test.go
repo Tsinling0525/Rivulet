@@ -66,3 +66,41 @@ func TestWorkflowStoreCreateVersionAndActivate(t *testing.T) {
 		t.Fatalf("expected 2 nodes in active version request, got %d", got)
 	}
 }
+
+func TestWorkflowStoreRollbackPromptToHash(t *testing.T) {
+	store := &WorkflowStore{dir: filepath.Join(t.TempDir(), "workflows")}
+	reqV1 := n8n.N8nRequest{Workflow: n8n.N8nWorkflow{
+		ID:   "wf-prompt",
+		Name: "Prompt Workflow",
+		Nodes: []n8n.N8nNode{{
+			ID:         "llm1",
+			Name:       "LLM",
+			Type:       "chatgpt",
+			Parameters: map[string]interface{}{"prompt": "old prompt"},
+		}},
+	}}
+	if _, err := store.Create(reqV1, "", true); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	reqV2 := reqV1
+	reqV2.Workflow.Nodes[0].Parameters = map[string]interface{}{"prompt": "new prompt"}
+	if _, err := store.AddVersion("wf-prompt", reqV2, true); err != nil {
+		t.Fatalf("AddVersion returned error: %v", err)
+	}
+
+	record, err := store.RollbackPromptToHash("wf-prompt", "llm1", promptTemplateHash("old prompt"), true)
+	if err != nil {
+		t.Fatalf("RollbackPromptToHash returned error: %v", err)
+	}
+	if record.ActiveVersion != 3 {
+		t.Fatalf("expected rollback version 3 to be active, got %d", record.ActiveVersion)
+	}
+	_, active, err := store.LoadVersionRequest("wf-prompt", 0)
+	if err != nil {
+		t.Fatalf("LoadVersionRequest returned error: %v", err)
+	}
+	prompt, _ := active.Workflow.Nodes[0].Parameters["prompt"].(string)
+	if prompt != "old prompt" {
+		t.Fatalf("expected active prompt to roll back, got %q", prompt)
+	}
+}

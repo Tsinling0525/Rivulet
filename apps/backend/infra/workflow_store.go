@@ -1,6 +1,8 @@
 package infra
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -173,6 +175,76 @@ func (s *WorkflowStore) LoadVersionRequest(id string, version int) (StoredWorkfl
 	return record, req, nil
 }
 
+func (s *WorkflowStore) RollbackPromptToHash(id, nodeID, promptHash string, activate bool) (StoredWorkflow, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record, err := s.loadLocked(id)
+	if err != nil {
+		return StoredWorkflow{}, err
+	}
+	targetPrompt := ""
+	for _, version := range record.Versions {
+		var req n8n.N8nRequest
+		if err := json.Unmarshal(version.Request, &req); err != nil {
+			return StoredWorkflow{}, err
+		}
+		for _, node := range req.Workflow.Nodes {
+			if node.ID != nodeID {
+				continue
+			}
+			prompt, _ := node.Parameters["prompt"].(string)
+			if prompt != "" && promptTemplateHash(prompt) == promptHash {
+				targetPrompt = prompt
+				break
+			}
+		}
+		if targetPrompt != "" {
+			break
+		}
+	}
+	if targetPrompt == "" {
+		return StoredWorkflow{}, fmt.Errorf("prompt hash %s not found for node %s", promptHash, nodeID)
+	}
+
+	_, req, err := s.loadVersionRequestLocked(record, record.ActiveVersion)
+	if err != nil {
+		return StoredWorkflow{}, err
+	}
+	replaced := false
+	for i := range req.Workflow.Nodes {
+		if req.Workflow.Nodes[i].ID != nodeID {
+			continue
+		}
+		if req.Workflow.Nodes[i].Parameters == nil {
+			req.Workflow.Nodes[i].Parameters = map[string]interface{}{}
+		}
+		req.Workflow.Nodes[i].Parameters["prompt"] = targetPrompt
+		replaced = true
+		break
+	}
+	if !replaced {
+		return StoredWorkflow{}, fmt.Errorf("node %s not found in active workflow", nodeID)
+	}
+
+	now := time.Now().UTC()
+	number := 1
+	if len(record.Versions) > 0 {
+		number = record.Versions[len(record.Versions)-1].Number + 1
+	}
+	record.Kind = workflowKindFromRequest(req)
+	record.AI = req.Workflow.AI
+	record.UpdatedAt = now
+	record.Versions = append(record.Versions, buildWorkflowVersion(number, req, now))
+	if activate || record.ActiveVersion == 0 {
+		record.ActiveVersion = number
+	}
+	if err := s.saveLocked(record); err != nil {
+		return StoredWorkflow{}, err
+	}
+	return record, nil
+}
+
 func (s *WorkflowStore) listLocked() ([]StoredWorkflow, error) {
 	if err := ensureDir(s.dir); err != nil {
 		return nil, err
@@ -237,6 +309,21 @@ func findWorkflowVersion(record StoredWorkflow, version int) (StoredWorkflowVers
 	return StoredWorkflowVersion{}, false
 }
 
+func (s *WorkflowStore) loadVersionRequestLocked(record StoredWorkflow, version int) (StoredWorkflowVersion, n8n.N8nRequest, error) {
+	if version == 0 {
+		version = record.ActiveVersion
+	}
+	storedVersion, ok := findWorkflowVersion(record, version)
+	if !ok {
+		return StoredWorkflowVersion{}, n8n.N8nRequest{}, fmt.Errorf("workflow %s version %d not found", record.ID, version)
+	}
+	var req n8n.N8nRequest
+	if err := json.Unmarshal(storedVersion.Request, &req); err != nil {
+		return StoredWorkflowVersion{}, n8n.N8nRequest{}, err
+	}
+	return storedVersion, req, nil
+}
+
 func buildWorkflowVersion(number int, req n8n.N8nRequest, now time.Time) StoredWorkflowVersion {
 	return StoredWorkflowVersion{
 		Number:    number,
@@ -280,9 +367,14 @@ func workflowKindFromRequest(req n8n.N8nRequest) model.WorkflowKind {
 	}
 	for _, node := range req.Workflow.Nodes {
 		switch node.Type {
-		case "chatgpt", "ollama":
+		case "chatgpt", "ollama", "llm:route":
 			return model.WorkflowKindAI
 		}
 	}
 	return model.WorkflowKindAutomation
+}
+
+func promptTemplateHash(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

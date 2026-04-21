@@ -1184,6 +1184,10 @@
             const avgTokens = Number(version.average_total_tokens || 0).toFixed(1);
             const successRate = Number(version.success_rate || 0).toFixed(0);
             const latency = version.average_latency_ms ? `${Number(version.average_latency_ms).toFixed(0)} ms` : "--";
+            const rollback =
+              version.workflow_id && version.node_id && version.prompt_hash
+                ? `<button type="button" class="secondary" data-prompt-rollback="${escapeHTML(version.workflow_id)}" data-node-id="${escapeHTML(version.node_id)}" data-prompt-hash="${escapeHTML(version.prompt_hash)}">Rollback</button>`
+                : "";
             return `
               <tr>
                 <td>
@@ -1199,6 +1203,7 @@
                     <span>${escapeHTML(String(version.calls || 0))} calls · ${successRate}% success</span>
                     <span class="subtext">${avgTokens} avg tokens · ${escapeHTML(String(version.total_tokens || 0))} total</span>
                     <span class="subtext">${escapeHTML(latency)} avg latency</span>
+                    ${rollback}
                   </div>
                 </td>
                 <td>${renderPromptDiff(version.prompt_preview_diff, version.version)}</td>
@@ -1206,6 +1211,11 @@
             `;
           })
           .join("");
+        promptVersionTableBody.querySelectorAll("[data-prompt-rollback]").forEach((button) => {
+          button.addEventListener("click", () => {
+            void guarded(() => rollbackPromptVersion(button.dataset.promptRollback, button.dataset.nodeId, button.dataset.promptHash));
+          });
+        });
       }
 
       function statusClass(stateValue) {
@@ -1933,6 +1943,17 @@
           body: JSON.stringify({}),
         });
         await Promise.all([fetchMetrics(), fetchInstanceDetail()]);
+      }
+
+      async function rollbackPromptVersion(workflowId, nodeId, promptHash) {
+        if (!workflowId || !nodeId || !promptHash) {
+          return;
+        }
+        await apiJSON(`/workflows/${encodeURIComponent(workflowId)}/prompts/${encodeURIComponent(nodeId)}/rollback`, {
+          method: "POST",
+          body: JSON.stringify({ prompt_hash: promptHash, activate: true }),
+        });
+        await Promise.all([fetchMetrics(), fetchWorkflowFiles()]);
       }
 
       async function refreshCurrentView() {

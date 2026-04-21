@@ -22,6 +22,7 @@ import (
 	_ "github.com/Tsinling0525/rivulet/nodes/files"
 	_ "github.com/Tsinling0525/rivulet/nodes/fs"
 	_ "github.com/Tsinling0525/rivulet/nodes/http"
+	_ "github.com/Tsinling0525/rivulet/nodes/llmroute"
 	_ "github.com/Tsinling0525/rivulet/nodes/logic"
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
 	_ "github.com/Tsinling0525/rivulet/nodes/ollama"
@@ -347,6 +348,27 @@ func NewRouter() *gin.Engine {
 			return
 		}
 		record, err := workflows.ActivateVersion(c.Param("id"), payload.Version)
+		if err != nil {
+			status := http.StatusBadRequest
+			if err == infra.ErrWorkflowNotFound {
+				status = http.StatusNotFound
+			}
+			sendError(c, status, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{"workflow": workflowDetail(record)})
+	})
+
+	r.POST("/workflows/:id/prompts/:node_id/rollback", func(c *gin.Context) {
+		var payload struct {
+			PromptHash string `json:"prompt_hash"`
+			Activate   *bool  `json:"activate"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil || payload.PromptHash == "" {
+			sendError(c, http.StatusBadRequest, "prompt_hash is required")
+			return
+		}
+		record, err := workflows.RollbackPromptToHash(c.Param("id"), c.Param("node_id"), payload.PromptHash, payload.Activate == nil || *payload.Activate)
 		if err != nil {
 			status := http.StatusBadRequest
 			if err == infra.ErrWorkflowNotFound {

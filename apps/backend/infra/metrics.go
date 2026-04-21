@@ -202,7 +202,10 @@ func (s *RunStore) PromptVersionMetrics(limit int) ([]PromptVersionMetric, error
 			if event.Type != "ai_model_call" {
 				continue
 			}
-			promptHash := stringField(event.Fields, "prompt_hash")
+			promptHash := stringField(event.Fields, "prompt_template_hash")
+			if promptHash == "" {
+				promptHash = stringField(event.Fields, "prompt_hash")
+			}
 			if promptHash == "" {
 				continue
 			}
@@ -248,7 +251,7 @@ func (s *RunStore) PromptVersionMetrics(limit int) ([]PromptVersionMetric, error
 			}
 			agg.calls++
 			switch stringField(event.Fields, "status") {
-			case "succeeded":
+			case "succeeded", "cached":
 				agg.succeeded++
 			case "failed":
 				agg.failed++

@@ -59,6 +59,7 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 	}
 
 	client := &http.Client{Timeout: 60 * time.Second}
+	cacheOpts := llm.SemanticCacheConfig(node.Config["semantic_cache"])
 	out := make(model.Items, 0, len(in))
 	for _, item := range in {
 		if item == nil {
@@ -67,6 +68,18 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 		prompt, err := n.RenderPrompt(n.cfg.Prompt, item)
 		if err != nil {
 			return nil, err
+		}
+		if hit, ok := llm.LookupSemanticCache("openai", n.cfg.Model, string(node.ID), prompt, cacheOpts); ok {
+			n.emitCachedCall(ctx, wf, node, prompt, hit.Output, hit)
+			out = append(out, model.Item{
+				"prompt":     prompt,
+				"output":     hit.Output,
+				"model":      n.cfg.Model,
+				"node_id":    node.ID,
+				"cache_hit":  true,
+				"cache_type": "semantic",
+			})
+			continue
 		}
 
 		payload := n.buildPayload(node, prompt)
@@ -104,6 +117,7 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 			return nil, err
 		}
 		n.emitCall(ctx, wf, node, prompt, content, usage, time.Since(start), nil)
+		llm.StoreSemanticCache("openai", n.cfg.Model, string(node.ID), prompt, content, cacheOpts)
 
 		out = append(out, model.Item{
 			"prompt":  prompt,
@@ -139,19 +153,41 @@ func (n *ChatGPTNode) emitCall(ctx context.Context, wf model.Workflow, node mode
 	}
 	humanReview, _ := node.Config["human_review_required"].(bool)
 	n.EmitAIModelCall(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIModelCall{
-		Provider:      "openai",
-		Model:         n.cfg.Model,
-		Endpoint:      n.cfg.Endpoint,
-		PromptHash:    llm.PromptHash(prompt),
-		PromptPreview: llm.Preview(prompt, 300),
-		OutputPreview: llm.Preview(output, 300),
-		InputTokens:   usage.Input,
-		OutputTokens:  usage.Output,
-		TotalTokens:   usage.Total,
-		LatencyMS:     latency.Milliseconds(),
-		Status:        status,
-		Error:         errText,
-		HumanReview:   humanReview,
+		Provider:           "openai",
+		Model:              n.cfg.Model,
+		Endpoint:           n.cfg.Endpoint,
+		PromptHash:         llm.PromptHash(prompt),
+		PromptTemplateHash: llm.PromptHash(n.cfg.Prompt),
+		PromptPreview:      llm.Preview(prompt, 300),
+		OutputPreview:      llm.Preview(output, 300),
+		InputTokens:        usage.Input,
+		OutputTokens:       usage.Output,
+		TotalTokens:        usage.Total,
+		LatencyMS:          latency.Milliseconds(),
+		Status:             status,
+		Error:              errText,
+		HumanReview:        humanReview,
+	})
+}
+
+func (n *ChatGPTNode) emitCachedCall(ctx context.Context, wf model.Workflow, node model.Node, prompt, output string, hit llm.SemanticCacheHit) {
+	humanReview, _ := node.Config["human_review_required"].(bool)
+	n.EmitAIModelCall(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIModelCall{
+		Provider:           "openai",
+		Model:              n.cfg.Model,
+		Endpoint:           n.cfg.Endpoint,
+		PromptHash:         llm.PromptHash(prompt),
+		PromptTemplateHash: llm.PromptHash(n.cfg.Prompt),
+		PromptPreview:      llm.Preview(prompt, 300),
+		OutputPreview:      llm.Preview(output, 300),
+		Status:             "cached",
+		HumanReview:        humanReview,
+		Extra: map[string]any{
+			"cache_hit":        true,
+			"cache_type":       "semantic",
+			"cache_similarity": hit.Similarity,
+			"cached_prompt":    hit.PromptHash,
+		},
 	})
 }
 

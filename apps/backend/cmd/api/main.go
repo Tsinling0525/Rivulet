@@ -31,6 +31,7 @@ func main() {
 	fmt.Printf("   GET    /workflows/:id          - Inspect one persisted workflow\n")
 	fmt.Printf("   POST   /workflows/:id/versions - Create a new workflow version\n")
 	fmt.Printf("   POST   /workflows/:id/activate - Activate a workflow version\n")
+	fmt.Printf("   POST   /workflows/:id/prompts/:node_id/rollback - Roll back a prompt by hash\n")
 	fmt.Printf("   GET    /runs                   - List persisted runs\n")
 	fmt.Printf("   GET    /runs/:id               - Inspect one persisted run\n")
 	fmt.Printf("   POST   /runs/:id/replay        - Replay a persisted run\n")
