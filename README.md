@@ -36,7 +36,7 @@ Rivulet/
 
 ## 🧭 Frontend Product Plan
 
-The dashboard UI is planned as a personal AI workflow console rather than a single generic chat surface. See [docs/frontend-information-architecture.md](docs/frontend-information-architecture.md) for the MVP information architecture, page hierarchy, low-fidelity wireframes, reusable workflow workspace pattern, example workflow adaptations, component system, and UX principles.
+The dashboard UI is evolving into an all-in-one AI product organized around user-facing capability hubs: Research, Create, Track, and Library. Workflows remain the orchestration layer under Automations, while runs, reviews, traces, and settings live under System. See [docs/frontend-information-architecture.md](docs/frontend-information-architecture.md) for the product IA, migration notes, workspace model, component system, and UX principles.
 
 ## 🎯 Quick Start
 
@@ -236,7 +236,7 @@ data/files/image_to_latex_workflow/
 - Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the Rivulet React console powered by `apps/frontend/index.html`, `apps/frontend/app.js`, and `apps/frontend/styles.css`.
 - The UI is served directly by the Go API (configurable via `RIV_FRONTEND_DIR`) so the backend and frontend ship together in the monorepo.
 - The console calls `/dashboard/metrics`, `/workflows`, `/workflows/files`, `/runs`, and `/reviews`, with sample fallback data for an empty local environment.
-- The workspace uses the product plan in `docs/frontend-information-architecture.md`: workflows, execution traces, human review, artifacts, and settings are separate surfaces instead of one generic chat screen.
+- The frontend navigation is product-first: Research, Create, Track, and Library are primary; Automations contains workflow definitions and the fallback workspace; System contains runs, reviews, traces, and settings.
 - Extend the live cards by enhancing `infra.DashboardMetrics()` and the persisted workflow/run/review API responses consumed by the React components.
 
 ### 10. Current API Surface

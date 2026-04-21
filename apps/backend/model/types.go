@@ -40,6 +40,7 @@ type AIWorkflowMetadata struct {
 	Models              []string `json:"models,omitempty"`
 	RiskLevel           string   `json:"risk_level,omitempty"`
 	HumanReviewRequired bool     `json:"human_review_required,omitempty"`
+	WorkspaceType       string   `json:"workspaceType,omitempty"`
 }
 
 type AINodeMetadata struct {

@@ -588,6 +588,29 @@ h3 {
   gap: 8px;
 }
 
+.interaction-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.interaction-card,
+.storyboard-frame {
+  background: var(--panel-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.storyboard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .artifact-row {
   align-items: center;
   background: var(--panel-subtle);
@@ -682,7 +705,12 @@ h3 {
 
   .workspace,
   .split,
-  .two-column {
+  .two-column,
+  .storyboard {
+    grid-template-columns: 1fr;
+  }
+
+  .interaction-grid {
     grid-template-columns: 1fr;
   }
 }

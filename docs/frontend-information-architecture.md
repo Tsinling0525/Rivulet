@@ -1,5 +1,58 @@
 # Rivulet Frontend Information Architecture
 
+## Current Product Direction
+
+Rivulet is now organized as an all-in-one AI product rather than a workflow-engine dashboard. Workflows remain an orchestration layer and automation primitive, but they are no longer the primary top-level product abstraction.
+
+Implemented top-level navigation:
+
+```text
+Home
+Research
+Create
+Track
+Library
+Automations
+System
+```
+
+Current product route model:
+
+```text
+/
+/research
+/create
+/track
+/library
+/automations/workflows
+/system/runs
+```
+
+Product-facing surfaces:
+
+- `Research`: paper search, summaries, citation outputs, and research history.
+- `Create`: video generation, scripts, storyboards, captions, and media review.
+- `Track`: meal logging, nutrition estimates, confidence flags, and personal history.
+- `Library`: durable user-facing outputs and source files.
+
+Advanced/operator surfaces:
+
+- `Automations`: workflow catalog, schedules, templates, and the generic fallback workspace.
+- `System`: runs, reviews, traces, model-call observability, plugins, and settings.
+
+Naming shift:
+
+```text
+Workflow        -> Automation, except in advanced workflow catalog
+Run             -> Task or activity in product pages
+Execution trace -> System trace
+Asset           -> Library item or output
+Review gate     -> Approval
+Node            -> Step, except in System and Automations
+```
+
+The older workflow-first IA below is retained as historical implementation context for the engine-facing surfaces. Product work should prioritize the current navigation above.
+
 This document defines the MVP information architecture, page model, low-fidelity wireframes, reusable workspace pattern, and component system for evolving Rivulet from a simple chat playground into a personal AI workflow console.
 
 Rivulet should feel like an operator workspace for durable AI workflows. Chat is available where it helps, but the primary objects are workflows, runs, reviews, events, and artifacts.
@@ -689,6 +742,7 @@ Workflow
 - ai.models
 - ai.risk_level
 - ai.human_review_required
+- ai.workspaceType
 - last_run
 - status
 
@@ -750,6 +804,8 @@ Artifact
 - storage_ref
 - export_formats
 ```
+
+`ai.workspaceType` selects the workflow interaction UI. Supported MVP values are `default`, `paper`, and `video`; unknown values should fall back to `default`.
 
 ## UX Principles
 

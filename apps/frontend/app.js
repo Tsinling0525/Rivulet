@@ -5,17 +5,52 @@ const h = React.createElement;
 
 const navItems = [
   { id: "home", label: "Home", icon: "H" },
-  { id: "workflows", label: "Workflows", icon: "W" },
-  { id: "workspace", label: "Workspace", icon: "X" },
-  { id: "runs", label: "Runs", icon: "R" },
-  { id: "review", label: "Review", icon: "Q" },
-  { id: "assets", label: "Assets", icon: "A" },
-  { id: "settings", label: "Settings", icon: "S" },
+  { id: "research", label: "Research", icon: "R" },
+  { id: "create", label: "Create", icon: "C" },
+  { id: "track", label: "Track", icon: "T" },
+  { id: "library", label: "Library", icon: "L" },
+  { id: "automations", label: "Automations", icon: "A" },
+  { id: "system", label: "System", icon: "S" },
 ];
 
+const pageRoutes = {
+  home: "/",
+  research: "/research",
+  create: "/create",
+  track: "/track",
+  library: "/library",
+  automations: "/automations/workflows",
+  system: "/system/runs",
+};
+
+function pageFromHash() {
+  const path = window.location.hash.replace(/^#/, "") || "/";
+  if (path.startsWith("/research")) return "research";
+  if (path.startsWith("/create")) return "create";
+  if (path.startsWith("/track")) return "track";
+  if (path.startsWith("/library")) return "library";
+  if (path.startsWith("/automations")) return "automations";
+  if (path.startsWith("/system")) return "system";
+  return "home";
+}
+
 const workspaceTemplates = {
+  default: {
+    title: "Generic Workflow",
+    inputFields: [
+      ["Input payload", "{ }"],
+      ["Preset", "Manual run"],
+      ["Review policy", "Workflow default"],
+    ],
+    steps: ["Validate inputs", "Execute nodes", "Collect outputs", "Apply review policy"],
+    artifacts: ["result.json", "run_events.json"],
+    preview:
+      "Generic workflow output\n\nThis fallback workspace keeps execution controls, event observability, and artifact handling available for any workflow type.",
+    exports: ["JSON", "Run trace"],
+  },
   "paper-search": {
     title: "Paper Search + Summary",
+    workspaceType: "paper",
     inputFields: [
       ["Research query", "agentic coding papers"],
       ["Sources", "arXiv, Semantic Scholar, uploaded PDFs"],
@@ -31,6 +66,7 @@ const workspaceTemplates = {
   },
   "video-generator": {
     title: "Video Generation",
+    workspaceType: "video",
     inputFields: [
       ["Source content", "Launch notes and outline"],
       ["Style", "Explainer"],
@@ -46,6 +82,7 @@ const workspaceTemplates = {
   },
   "meal-logger": {
     title: "Meal Logging + Nutrition",
+    workspaceType: "default",
     inputFields: [
       ["Meal description", "Chicken rice bowl with avocado"],
       ["Portion hints", "Large bowl"],
@@ -75,6 +112,7 @@ const sampleWorkflows = [
       models: ["gpt-5-mini", "text-embedding"],
       risk_level: "medium",
       human_review_required: true,
+      workspaceType: "paper",
     },
   },
   {
@@ -90,6 +128,7 @@ const sampleWorkflows = [
       models: ["gpt-5-mini", "video-renderer"],
       risk_level: "high",
       human_review_required: true,
+      workspaceType: "video",
     },
   },
   {
@@ -105,6 +144,7 @@ const sampleWorkflows = [
       models: ["gpt-5-mini"],
       risk_level: "low",
       human_review_required: false,
+      workspaceType: "default",
     },
   },
 ];
@@ -278,6 +318,7 @@ function useRivuletData() {
 function normalizeWorkflow(workflow, index) {
   const ai = workflow.ai || {};
   const name = workflow.name || workflow.file_name || `Workflow ${index + 1}`;
+  const workspaceType = normalizeWorkspaceType(workflow.workspaceType || workflow.workspace_type || ai.workspaceType || ai.workspace_type || inferWorkspaceType(name));
   return {
     id: workflow.id || workflow.workflow_id || slugify(name),
     name,
@@ -291,10 +332,23 @@ function normalizeWorkflow(workflow, index) {
       models: ai.models || [],
       risk_level: ai.risk_level || "unknown",
       human_review_required: Boolean(ai.human_review_required),
+      workspaceType,
     },
     sample_data: workflow.sample_data,
     path: workflow.path,
   };
+}
+
+function normalizeWorkspaceType(value) {
+  const normalized = String(value || "default").toLowerCase().trim();
+  return ["paper", "video"].includes(normalized) ? normalized : "default";
+}
+
+function inferWorkspaceType(name) {
+  const normalized = String(name || "").toLowerCase();
+  if (normalized.includes("paper") || normalized.includes("research") || normalized.includes("summary")) return "paper";
+  if (normalized.includes("video") || normalized.includes("storyboard") || normalized.includes("caption")) return "video";
+  return "default";
 }
 
 function normalizeRun(run) {
@@ -353,12 +407,19 @@ function riskTone(risk) {
 }
 
 function workflowTemplate(workflow) {
-  if (!workflow) return workspaceTemplates["paper-search"];
+  if (!workflow) return workspaceTemplates.default;
   if (workspaceTemplates[workflow.id]) return workspaceTemplates[workflow.id];
+  if (workflow.ai?.workspaceType === "paper") return workspaceTemplates["paper-search"];
+  if (workflow.ai?.workspaceType === "video") return workspaceTemplates["video-generator"];
+  if (workflow.ai?.workspaceType === "default") return workspaceTemplates.default;
   const name = workflow.name.toLowerCase();
   if (name.includes("video")) return workspaceTemplates["video-generator"];
   if (name.includes("meal") || name.includes("nutrition")) return workspaceTemplates["meal-logger"];
-  return workspaceTemplates["paper-search"];
+  return workspaceTemplates.default;
+}
+
+function workflowByType(workflows, workspaceType) {
+  return workflows.find((workflow) => normalizeWorkspaceType(workflow.ai?.workspaceType) === workspaceType);
 }
 
 function workflowModels(workflow) {
@@ -404,11 +465,13 @@ function guessAssetType(name) {
 
 function App() {
   const data = useRivuletData();
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState(pageFromHash);
   const [query, setQuery] = useState("");
   const [selectedWorkflowID, setSelectedWorkflowID] = useState("paper-search");
   const [selectedRunID, setSelectedRunID] = useState("run-paper-001");
   const [selectedReviewID, setSelectedReviewID] = useState("review-video-001");
+  const [automationView, setAutomationView] = useState("catalog");
+  const [systemView, setSystemView] = useState("runs");
 
   const workflows = data.workflows;
   const runs = data.runs;
@@ -419,41 +482,74 @@ function App() {
   const selectedReview = reviews.find((item) => item.id === selectedReviewID) || reviews[0];
   const pendingReviews = reviews.filter((item) => item.status === "pending").length;
 
-  function openWorkflow(id) {
+  useEffect(() => {
+    const syncPage = () => setPage(pageFromHash());
+    window.addEventListener("hashchange", syncPage);
+    return () => window.removeEventListener("hashchange", syncPage);
+  }, []);
+
+  function navigate(nextPage) {
+    setPage(nextPage);
+    const route = pageRoutes[nextPage] || "/";
+    if (window.location.hash !== `#${route}`) {
+      window.location.hash = route;
+    }
+  }
+
+  function pageForWorkflow(workflow) {
+    const type = normalizeWorkspaceType(workflow?.ai?.workspaceType);
+    if (type === "paper") return "research";
+    if (type === "video") return "create";
+    if (workflow?.id === "meal-logger" || workflow?.name?.toLowerCase().includes("meal")) return "track";
+    return "automations";
+  }
+
+  function openDomainWorkflow(id) {
     setSelectedWorkflowID(id);
     const latestRun = runs.find((run) => run.workflow_id === id);
     if (latestRun) setSelectedRunID(latestRun.id);
-    setPage("workspace");
+    const workflow = workflows.find((item) => item.id === id);
+    navigate(pageForWorkflow(workflow));
+  }
+
+  function openAutomationWorkflow(id) {
+    setSelectedWorkflowID(id);
+    const latestRun = runs.find((run) => run.workflow_id === id);
+    if (latestRun) setSelectedRunID(latestRun.id);
+    setAutomationView("workspace");
+    navigate("automations");
   }
 
   function openRun(id) {
     setSelectedRunID(id);
-    setPage("runs");
+    setSystemView("runs");
+    navigate("system");
   }
 
   function openReview(id) {
     setSelectedReviewID(id);
-    setPage("review");
+    setSystemView("reviews");
+    navigate("system");
   }
 
   const pageNode = {
-    home: h(HomePage, { data, workflows, runs, reviews, assets, openWorkflow, openRun, openReview }),
-    workflows: h(WorkflowsPage, { workflows, query, setQuery, openWorkflow }),
-    workspace: h(WorkspacePage, { workflow: selectedWorkflow, runs, openRun }),
-    runs: h(RunsPage, { runs, selectedRun, setSelectedRunID }),
-    review: h(ReviewPage, { reviews, selectedReview, setSelectedReviewID, setReviews: data.setReviews, reload: data.reload }),
-    assets: h(AssetsPage, { assets, workflows }),
-    settings: h(SettingsPage, { workflows }),
+    home: h(HomePage, { data, workflows, runs, reviews, assets, openWorkflow: openDomainWorkflow, openRun, openReview, setPage: navigate }),
+    research: h(ResearchPage, { workflows, runs, openRun }),
+    create: h(CreatePage, { workflows, runs, openRun }),
+    track: h(TrackPage, { workflows, runs, assets }),
+    library: h(AssetsPage, { assets, workflows }),
+    automations: h(AutomationsPage, { workflows, query, setQuery, selectedWorkflow, runs, openWorkflow: openAutomationWorkflow, automationView, setAutomationView, openRun }),
+    system: h(SystemPage, { workflows, runs, selectedRun, setSelectedRunID, reviews, selectedReview, setSelectedReviewID, setReviews: data.setReviews, reload: data.reload, systemView, setSystemView }),
   }[page];
 
   return h(
     "div",
     { className: "app-shell" },
-    h(Sidebar, { page, setPage, pendingReviews }),
+    h(Sidebar, { page, setPage: navigate, pendingReviews }),
     h(
       "main",
       { className: "main" },
-      h(Topbar, { workflows, selectedWorkflow, query, setQuery, onWorkflowChange: openWorkflow, reload: data.reload }),
+      h(Topbar, { workflows, selectedWorkflow, query, setQuery, onWorkflowChange: openDomainWorkflow, reload: data.reload }),
       h(
         "div",
         { className: "content" },
@@ -482,11 +578,11 @@ function Sidebar({ page, setPage, pendingReviews }) {
             onClick: () => setPage(item.id),
           },
           h("span", { className: "nav-label" }, h("span", { className: "nav-icon" }, item.icon), item.label),
-          item.id === "review" && pendingReviews > 0 ? h("span", { className: "nav-count" }, pendingReviews) : null,
+          item.id === "system" && pendingReviews > 0 ? h("span", { className: "nav-count" }, pendingReviews) : null,
         ),
       ),
     ),
-    h("div", { className: "sidebar-note" }, "AI workflows, execution traces, human review, and durable artifacts in one operator workspace."),
+    h("div", { className: "sidebar-note" }, "Research, creation, and tracking are the primary surfaces. Workflows and traces live under Automations and System."),
   );
 }
 
@@ -501,7 +597,7 @@ function Topbar({ workflows, selectedWorkflow, query, setQuery, onWorkflowChange
         className: "search",
         value: query,
         onChange: (event) => setQuery(event.target.value),
-        placeholder: "Search workflows, runs, reviews, assets",
+        placeholder: "Search tasks, outputs, automations, reviews",
       }),
     ),
     h(
@@ -513,7 +609,7 @@ function Topbar({ workflows, selectedWorkflow, query, setQuery, onWorkflowChange
           className: "select",
           value: selectedWorkflow?.id || "",
           onChange: (event) => onWorkflowChange(event.target.value),
-          "aria-label": "Quick launch workflow",
+          "aria-label": "Quick launch task",
         },
         workflows.map((workflow) => h("option", { key: workflow.id, value: workflow.id }, workflow.name)),
       ),
@@ -531,7 +627,7 @@ function PageHeader({ eyebrow, title, description, actions }) {
   );
 }
 
-function HomePage({ data, workflows, runs, reviews, assets, openWorkflow, openRun, openReview }) {
+function HomePage({ data, workflows, runs, reviews, assets, openWorkflow, openRun, openReview, setPage }) {
   const completed = runs.filter((run) => run.status === "completed").length;
   const failed = runs.filter((run) => run.status === "failed").length + Number(data.metrics?.failed_executions || 0);
   const active = runs.filter((run) => ["running", "paused"].includes(run.status)).length + Number(data.metrics?.instances || 0);
@@ -546,9 +642,13 @@ function HomePage({ data, workflows, runs, reviews, assets, openWorkflow, openRu
     null,
     h(PageHeader, {
       eyebrow: "Home",
-      title: "AI workflow console",
-      description: "Run workflows, inspect AI execution, review gated outputs, and manage artifacts.",
-      actions: [h("button", { className: "button primary", key: "launch", onClick: () => openWorkflow(workflows[0]?.id) }, "Open Workspace")],
+      title: "AI product workspace",
+      description: "Start research, create media, track personal data, review approvals, and return to recent outputs.",
+      actions: [
+        h("button", { className: "button primary", key: "research", onClick: () => setPage("research") }, "Search Papers"),
+        h("button", { className: "button", key: "video", onClick: () => setPage("create") }, "Generate Video"),
+        h("button", { className: "button", key: "meal", onClick: () => setPage("track") }, "Log Meal"),
+      ],
     }),
     h(
       "section",
@@ -564,11 +664,13 @@ function HomePage({ data, workflows, runs, reviews, assets, openWorkflow, openRu
       h(
         "div",
         { className: "panel" },
-        h("div", { className: "panel-header" }, h("h2", null, "Recent Workflows"), h(Badge, { tone: "blue" }, `${workflows.length} total`)),
+        h("div", { className: "panel-header" }, h("h2", null, "Capability Hubs"), h(Badge, { tone: "blue" }, "Product")),
         h(
           "div",
           { className: "panel-body grid workflow-grid" },
-          workflows.slice(0, 3).map((workflow) => h(WorkflowCard, { key: workflow.id, workflow, openWorkflow })),
+          h(CapabilityCard, { title: "Research", body: "Find papers, summarize claims, and manage citations.", action: "Open Research", onClick: () => setPage("research"), tone: "blue" }),
+          h(CapabilityCard, { title: "Create", body: "Generate scripts, storyboards, captions, and videos.", action: "Open Create", onClick: () => setPage("create"), tone: "amber" }),
+          h(CapabilityCard, { title: "Track", body: "Log meals, analyze nutrition, and review trends.", action: "Open Track", onClick: () => setPage("track"), tone: "green" }),
         ),
       ),
       h(
@@ -610,9 +712,9 @@ function WorkflowsPage({ workflows, query, setQuery, openWorkflow }) {
     React.Fragment,
     null,
     h(PageHeader, {
-      eyebrow: "Workflows",
-      title: "Workflow definitions",
-      description: "Browse durable workflow definitions and open the operator workspace for each one.",
+      eyebrow: "Automations",
+      title: "Workflow catalog",
+      description: "Browse orchestration definitions and open the advanced fallback workspace for workflow-level operation.",
       actions: [h("button", { className: "button primary", key: "new" }, "New Workflow")],
     }),
     h(
@@ -643,11 +745,153 @@ function WorkflowsPage({ workflows, query, setQuery, openWorkflow }) {
   );
 }
 
+function CapabilityCard({ title, body, action, onClick, tone }) {
+  return h(
+    "article",
+    { className: "workflow-card" },
+    h("div", { className: "card-title-row" }, h("h3", null, title), h(Badge, { tone }, "Hub")),
+    h("p", { className: "subtle" }, body),
+    h("button", { className: "button primary", onClick }, action),
+  );
+}
+
+function DomainSummary({ items }) {
+  return h(
+    "section",
+    { className: "grid metrics-grid" },
+    items.map(([label, value]) => h(StatTile, { key: label, label, value })),
+  );
+}
+
+function ResearchPage({ workflows, runs, openRun }) {
+  const workflow = workflowByType(workflows, "paper") || workflows.find((item) => item.id === "paper-search") || sampleWorkflows[0];
+  const researchRuns = runs.filter((run) => run.workflow_id === workflow.id);
+
+  return h(
+    React.Fragment,
+    null,
+    h(PageHeader, {
+      eyebrow: "Research",
+      title: "Research hub",
+      description: "Search papers, build summaries, track citations, and keep research history without exposing workflow internals first.",
+      actions: [
+        h("button", { className: "button primary", key: "search" }, "New Paper Search"),
+        h("button", { className: "button", key: "history", onClick: () => researchRuns[0] && openRun(researchRuns[0].id) }, "System Trace"),
+      ],
+    }),
+    h(DomainSummary, {
+      items: [
+        ["Paper summaries", "3"],
+        ["Citations", "18"],
+        ["Needs review", "1"],
+      ],
+    }),
+    h(WorkspacePage, { workflow, runs, openRun }),
+  );
+}
+
+function CreatePage({ workflows, runs, openRun }) {
+  const workflow = workflowByType(workflows, "video") || workflows.find((item) => item.id === "video-generator") || sampleWorkflows[1];
+  const createRuns = runs.filter((run) => run.workflow_id === workflow.id);
+
+  return h(
+    React.Fragment,
+    null,
+    h(PageHeader, {
+      eyebrow: "Create",
+      title: "Content creation hub",
+      description: "Turn source material into scripts, storyboards, captions, and reviewable video outputs.",
+      actions: [
+        h("button", { className: "button primary", key: "video" }, "New Video"),
+        h("button", { className: "button", key: "trace", onClick: () => createRuns[0] && openRun(createRuns[0].id) }, "System Trace"),
+      ],
+    }),
+    h(DomainSummary, {
+      items: [
+        ["Draft scripts", "2"],
+        ["Storyboards", "1"],
+        ["Pending approval", "1"],
+      ],
+    }),
+    h(WorkspacePage, { workflow, runs, openRun }),
+  );
+}
+
+function TrackPage({ workflows, runs, assets }) {
+  const workflow = workflows.find((item) => item.id === "meal-logger") || workflows.find((item) => item.name.toLowerCase().includes("meal")) || sampleWorkflows[2];
+  const template = workspaceTemplates["meal-logger"];
+
+  return h(
+    React.Fragment,
+    null,
+    h(PageHeader, {
+      eyebrow: "Track",
+      title: "Meal logging",
+      description: "Log meals, estimate nutrition, inspect confidence flags, and export personal history.",
+      actions: [h("button", { className: "button primary", key: "meal" }, "Log Meal")],
+    }),
+    h(DomainSummary, {
+      items: [
+        ["Meals today", "2"],
+        ["Protein", "86g"],
+        ["Low-confidence estimates", "1"],
+      ],
+    }),
+    h(
+      "section",
+      { className: "workspace" },
+      h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Meal Input")), h("div", { className: "panel-body workspace-stack" }, h(WorkspaceInputs, { workflow, template }))),
+      h("section", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Nutrition Workspace")), h("div", { className: "panel-body" }, h(MealInteractionCenter))),
+      h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Outputs"), h(StatusBadge, { status: "ready" })), h("div", { className: "panel-body workspace-stack" }, h(WorkspaceOutputs, { template }), h("p", { className: "subtle" }, `${assets.filter((asset) => asset.workflow_id === workflow.id).length} library items linked to meal tracking.`))),
+    ),
+  );
+}
+
+function AutomationsPage({ workflows, query, setQuery, selectedWorkflow, runs, openWorkflow, automationView, setAutomationView, openRun }) {
+  return h(
+    React.Fragment,
+    null,
+    h(PageHeader, {
+      eyebrow: "Automations",
+      title: "Advanced automation surface",
+      description: "Workflow definitions, schedules, templates, and the generic fallback workspace live here instead of the primary product navigation.",
+      actions: [h("button", { className: "button primary", key: "new" }, "New Automation")],
+    }),
+    h(WorkspaceTabs, { value: automationView, onChange: setAutomationView, items: [["catalog", "Workflow Catalog"], ["workspace", "Fallback Workspace"], ["schedules", "Schedules"]] }),
+    automationView === "catalog" ? h(WorkflowsPage, { workflows, query, setQuery, openWorkflow }) : null,
+    automationView === "workspace" ? h(WorkspacePage, { workflow: selectedWorkflow, runs, openRun }) : null,
+    automationView === "schedules" ? h(SchedulesPanel) : null,
+  );
+}
+
+function SystemPage({ workflows, runs, selectedRun, setSelectedRunID, reviews, selectedReview, setSelectedReviewID, setReviews, reload, systemView, setSystemView }) {
+  return h(
+    React.Fragment,
+    null,
+    h(PageHeader, {
+      eyebrow: "System",
+      title: "Operator surfaces",
+      description: "Runs, reviews, traces, model calls, plugins, and settings remain available for audit and debugging.",
+    }),
+    h(WorkspaceTabs, { value: systemView, onChange: setSystemView, items: [["runs", "Runs"], ["reviews", "Reviews"], ["traces", "Traces"], ["settings", "Settings"]] }),
+    systemView === "runs" ? h(RunsPage, { runs, selectedRun, setSelectedRunID }) : null,
+    systemView === "reviews" ? h(ReviewPage, { reviews, selectedReview, setSelectedReviewID, setReviews, reload }) : null,
+    systemView === "traces" ? h(TraceExplorerPage, { runs }) : null,
+    systemView === "settings" ? h(SettingsPage, { workflows }) : null,
+  );
+}
+
+const workspaceRegistry = {
+  default: GenericWorkspace,
+  paper: PaperWorkspace,
+  video: VideoWorkspace,
+};
+
 function WorkspacePage({ workflow, runs, openRun }) {
-  const [tab, setTab] = useState("steps");
   if (!workflow) return h(EmptyState, { title: "No workflow selected", body: "Choose a workflow to open its workspace." });
-  const template = workflowTemplate(workflow);
   const currentRun = runs.find((run) => run.workflow_id === workflow.id) || sampleRuns.find((run) => run.workflow_id === workflow.id) || sampleRuns[0];
+  const workspaceType = normalizeWorkspaceType(workflow.ai?.workspaceType);
+  const WorkspaceComponent = workspaceRegistry[workspaceType] || workspaceRegistry.default;
 
   return h(
     React.Fragment,
@@ -657,56 +901,224 @@ function WorkspacePage({ workflow, runs, openRun }) {
       title: workflow.name,
       description: workflow.ai?.purpose || workflow.description,
       actions: [
+        h(Badge, { tone: "blue", key: "type" }, `Workspace: ${workspaceType}`),
         h(Badge, { tone: riskTone(workflow.ai?.risk_level), key: "risk" }, `Risk: ${workflow.ai?.risk_level || "unknown"}`),
         h(Badge, { tone: workflow.ai?.human_review_required ? "amber" : "gray", key: "review" }, workflow.ai?.human_review_required ? "Review required" : "Review optional"),
         h("button", { className: "button primary", key: "run" }, "Run"),
         h("button", { className: "button", key: "history", onClick: () => openRun(currentRun?.id) }, "Trace"),
       ],
     }),
+    h(WorkspaceComponent, { workflow, run: currentRun }),
+  );
+}
+
+function WorkspaceLayout({ left, centerTitle, centerTabs, center, rightStatus, right }) {
+  return h(
+    "section",
+    { className: "workspace" },
+    h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Inputs")), h("div", { className: "panel-body workspace-stack" }, left)),
+    h("section", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, centerTitle), centerTabs), h("div", { className: "panel-body" }, center)),
+    h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Outputs"), rightStatus), h("div", { className: "panel-body workspace-stack" }, right)),
+  );
+}
+
+function GenericWorkspace({ workflow, run }) {
+  const template = workflowTemplate(workflow);
+  const [tab, setTab] = useState("interaction");
+
+  return h(WorkspaceLayout, {
+    left: h(WorkspaceInputs, { workflow, template }),
+    centerTitle: "Workflow Interaction",
+    centerTabs: h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["interaction", "Interaction"], ["observability", "Observability"]] }),
+    center: tab === "interaction" ? h(GenericInteractionCenter, { workflow, run, template }) : h(EventTimeline, { run }),
+    rightStatus: h(StatusBadge, { status: run?.status || "ready" }),
+    right: h(WorkspaceOutputs, { template }),
+  });
+}
+
+function PaperWorkspace({ workflow, run }) {
+  const template = workflowTemplate(workflow);
+  const [tab, setTab] = useState("research");
+
+  return h(WorkspaceLayout, {
+    left: h(WorkspaceInputs, { workflow, template }),
+    centerTitle: "Paper Research",
+    centerTabs: h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["research", "Research"], ["execution", "Execution"], ["observability", "Observability"]] }),
+    center: tab === "research" ? h(PaperInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run }),
+    rightStatus: h(StatusBadge, { status: run?.status || "ready" }),
+    right: h(WorkspaceOutputs, { template }),
+  });
+}
+
+function VideoWorkspace({ workflow, run }) {
+  const template = workflowTemplate(workflow);
+  const [tab, setTab] = useState("production");
+
+  return h(WorkspaceLayout, {
+    left: h(WorkspaceInputs, { workflow, template }),
+    centerTitle: "Video Production",
+    centerTabs: h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["production", "Production"], ["execution", "Execution"], ["observability", "Observability"]] }),
+    center: tab === "production" ? h(VideoInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run }),
+    rightStatus: h(StatusBadge, { status: run?.status || "ready" }),
+    right: h(WorkspaceOutputs, { template }),
+  });
+}
+
+function WorkspaceInputs({ workflow, template }) {
+  return h(
+    React.Fragment,
+    null,
+    template.inputFields.map(([label, value]) => h("div", { className: "field", key: label }, h("label", null, label), h("input", { className: "input", defaultValue: value }))),
+    h("div", { className: "field" }, h("label", null, "Model"), h("select", { className: "select", defaultValue: workflow.ai?.models?.[0] || "" }, (workflow.ai?.models?.length ? workflow.ai.models : ["Not declared"]).map((model) => h("option", { key: model, value: model }, model)))),
+    h("div", { className: "field" }, h("label", null, "Workspace Type"), h("input", { className: "input", value: workflow.ai?.workspaceType || "default", readOnly: true })),
+    h("button", { className: "button primary" }, "Run Workflow"),
+  );
+}
+
+function WorkspaceOutputs({ template }) {
+  return h(
+    React.Fragment,
+    null,
+    h(ArtifactList, { artifacts: template.artifacts }),
+    h("div", { className: "field" }, h("label", null, "Preview"), h("div", { className: "artifact-preview" }, template.preview)),
+    h("div", { className: "button-row" }, template.exports.map((item) => h("button", { className: "button", key: item }, item))),
+  );
+}
+
+function WorkspaceTabs({ value, onChange, items }) {
+  return h("div", { className: "tabs" }, items.map(([id, label]) => h("button", { key: id, className: `tab ${value === id ? "active" : ""}`, onClick: () => onChange(id) }, label)));
+}
+
+function GenericInteractionCenter({ workflow, run, template }) {
+  return h(
+    "div",
+    { className: "workspace-stack" },
+    h("div", { className: "empty-state" }, h("h3", null, "Generic workflow fallback"), h("p", { className: "subtle" }, "This workspace keeps interaction separate from the execution engine: inputs configure the run, the center guides the workflow, and observability stays available in the secondary tab.")),
+    h(ExecutionSteps, { steps: template.steps, run }),
+    h(ChatLayer, { workflow }),
+  );
+}
+
+function PaperInteractionCenter() {
+  return h(
+    "div",
+    { className: "workspace-stack" },
+    h("div", { className: "interaction-grid" },
+      h("div", { className: "interaction-card" }, h("h3", null, "Search Strategy"), h("p", { className: "subtle" }, "Query expansion, source selection, and recency filters drive paper discovery before the engine executes ranking nodes.")),
+      h("div", { className: "interaction-card" }, h("h3", null, "Review Focus"), h("p", { className: "subtle" }, "Check unsupported claims, citation quality, source relevance, and summary accuracy before approving artifacts.")),
+    ),
     h(
-      "section",
-      { className: "workspace" },
-      h(
-        "aside",
-        { className: "panel" },
-        h("div", { className: "panel-header" }, h("h2", null, "Inputs")),
-        h(
-          "div",
-          { className: "panel-body workspace-stack" },
-          template.inputFields.map(([label, value]) => h("div", { className: "field", key: label }, h("label", null, label), h("input", { className: "input", defaultValue: value }))),
-          h("div", { className: "field" }, h("label", null, "Model"), h("select", { className: "select", defaultValue: workflow.ai?.models?.[0] || "" }, (workflow.ai?.models?.length ? workflow.ai.models : ["Not declared"]).map((model) => h("option", { key: model, value: model }, model)))),
-          h("button", { className: "button primary" }, "Run Workflow"),
-        ),
+      "table",
+      { className: "table" },
+      h("thead", null, h("tr", null, h("th", null, "Candidate"), h("th", null, "Signal"), h("th", null, "Action"))),
+      h("tbody", null,
+        h("tr", null, h("td", null, "Tool-using agents for software tasks"), h("td", null, "High citation relevance"), h("td", null, h(Badge, { tone: "green" }, "Keep"))),
+        h("tr", null, h("td", null, "Survey of autonomous coding assistants"), h("td", null, "Broad but useful context"), h("td", null, h(Badge, { tone: "amber" }, "Review"))),
+        h("tr", null, h("td", null, "Unverified benchmark claim"), h("td", null, "Needs source check"), h("td", null, h(Badge, { tone: "red" }, "Flag"))),
       ),
-      h(
-        "section",
-        { className: "panel" },
-        h(
-          "div",
-          { className: "panel-header" },
-          h("h2", null, "Execution"),
-          h("div", { className: "tabs" }, ["steps", "chat", "logs"].map((name) => h("button", { key: name, className: `tab ${tab === name ? "active" : ""}`, onClick: () => setTab(name) }, name))),
-        ),
-        h(
-          "div",
-          { className: "panel-body" },
-          tab === "steps" ? h(ExecutionSteps, { steps: template.steps, run: currentRun }) : null,
-          tab === "chat" ? h(ChatLayer, { workflow }) : null,
-          tab === "logs" ? h(EventTimeline, { run: currentRun }) : null,
-        ),
+    ),
+  );
+}
+
+function VideoInteractionCenter() {
+  return h(
+    "div",
+    { className: "workspace-stack" },
+    h("div", { className: "interaction-grid" },
+      h("div", { className: "interaction-card" }, h("h3", null, "Production Stages"), h("p", { className: "subtle" }, "Outline, script, storyboard, captions, preview render, and final export are presented as creative work products rather than raw node logs.")),
+      h("div", { className: "interaction-card" }, h("h3", null, "Review Gates"), h("p", { className: "subtle" }, "Approve script before expensive rendering, then approve final media before export.")),
+    ),
+    h(
+      "div",
+      { className: "storyboard" },
+      ["Hook", "Workflow Demo", "Review Gate", "Export"].map((scene, index) =>
+        h("div", { className: "storyboard-frame", key: scene }, h("span", { className: "mono" }, `Scene ${index + 1}`), h("strong", null, scene), h("p", { className: "subtle" }, index === 0 ? "Open with the user goal." : index === 1 ? "Show inputs and execution." : index === 2 ? "Pause for approval." : "Generate final assets.")),
       ),
+    ),
+  );
+}
+
+function MealInteractionCenter() {
+  return h(
+    "div",
+    { className: "workspace-stack" },
+    h(
+      "div",
+      { className: "interaction-grid" },
+      h("div", { className: "interaction-card" }, h("h3", null, "Parsed Foods"), h("p", { className: "subtle" }, "Chicken, rice, avocado, greens, and dressing were detected from the meal description.")),
+      h("div", { className: "interaction-card" }, h("h3", null, "Confidence Flags"), h("p", { className: "subtle" }, "Portion estimate is medium confidence. Ask for clarification before using this for strict tracking.")),
+    ),
+    h(
+      "table",
+      { className: "table" },
+      h("thead", null, h("tr", null, h("th", null, "Nutrient"), h("th", null, "Estimate"), h("th", null, "Confidence"))),
       h(
-        "aside",
-        { className: "panel" },
-        h("div", { className: "panel-header" }, h("h2", null, "Outputs"), h(StatusBadge, { status: currentRun?.status || "ready" })),
-        h(
-          "div",
-          { className: "panel-body workspace-stack" },
-          h(ArtifactList, { artifacts: template.artifacts }),
-          h("div", { className: "field" }, h("label", null, "Preview"), h("div", { className: "artifact-preview" }, template.preview)),
-          h("div", { className: "button-row" }, template.exports.map((item) => h("button", { className: "button", key: item }, item))),
-        ),
+        "tbody",
+        null,
+        h("tr", null, h("td", null, "Protein"), h("td", null, "42g"), h("td", null, h(Badge, { tone: "green" }, "High"))),
+        h("tr", null, h("td", null, "Carbs"), h("td", null, "58g"), h("td", null, h(Badge, { tone: "amber" }, "Medium"))),
+        h("tr", null, h("td", null, "Fat"), h("td", null, "24g"), h("td", null, h(Badge, { tone: "amber" }, "Medium"))),
       ),
+    ),
+  );
+}
+
+function SchedulesPanel() {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Schedules")),
+    h(
+      "div",
+      { className: "panel-body" },
+      h(EmptyState, {
+        title: "Schedule management",
+        body: "Recurring workflow schedules stay in Automations because they are orchestration primitives, not primary user tasks.",
+      }),
+    ),
+  );
+}
+
+function TraceExplorerPage({ runs }) {
+  const aiEvents = runs.flatMap((run) =>
+    (run.events || [])
+      .filter((event) => event.type === "ai_model_call")
+      .map((event) => ({
+        ...event,
+        run_id: run.id,
+        workflow_name: run.workflow_name,
+      })),
+  );
+
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Trace Explorer"), h(Badge, { tone: "blue" }, `${aiEvents.length} model calls`)),
+    h(
+      "div",
+      { className: "panel-body" },
+      aiEvents.length > 0
+        ? h(
+            "table",
+            { className: "table" },
+            h("thead", null, h("tr", null, h("th", null, "Workflow"), h("th", null, "Model"), h("th", null, "Prompt Hash"), h("th", null, "Latency"), h("th", null, "Status"))),
+            h(
+              "tbody",
+              null,
+              aiEvents.map((event, index) =>
+                h(
+                  "tr",
+                  { key: `${event.run_id}-${index}` },
+                  h("td", null, event.workflow_name),
+                  h("td", null, event.fields?.model || "Unknown"),
+                  h("td", { className: "mono" }, event.fields?.prompt_hash || "-"),
+                  h("td", null, event.fields?.latency_ms ? `${event.fields.latency_ms}ms` : "-"),
+                  h("td", null, h(StatusBadge, { status: event.fields?.status || "event" })),
+                ),
+              ),
+            ),
+          )
+        : h(EmptyState, { title: "No model calls yet", body: "AI observability appears here after model-call events are recorded." }),
     ),
   );
 }
@@ -949,6 +1361,7 @@ function WorkflowCard({ workflow, openWorkflow }) {
       "div",
       { className: "badge-row" },
       h(Badge, { tone: workflow.kind === "ai_workflow" ? "blue" : "gray" }, workflow.kind),
+      h(Badge, { tone: "blue" }, `Workspace: ${workflow.ai?.workspaceType || "default"}`),
       h(Badge, { tone: riskTone(workflow.ai?.risk_level) }, `Risk: ${workflow.ai?.risk_level || "unknown"}`),
       h(Badge, { tone: workflow.ai?.human_review_required ? "amber" : "gray" }, workflow.ai?.human_review_required ? "Review" : "No gate"),
     ),
