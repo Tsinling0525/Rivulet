@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +26,7 @@ import (
 	_ "github.com/Tsinling0525/rivulet/nodes/llmroute"
 	_ "github.com/Tsinling0525/rivulet/nodes/logic"
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
-	_ "github.com/Tsinling0525/rivulet/nodes/ollama"
+	ollama "github.com/Tsinling0525/rivulet/nodes/ollama"
 	_ "github.com/Tsinling0525/rivulet/nodes/openai"
 	_ "github.com/Tsinling0525/rivulet/nodes/review"
 	_ "github.com/Tsinling0525/rivulet/nodes/wasm"
@@ -82,6 +83,60 @@ func handleStartWorkflow(deps plugin.Deps, runs *infra.RunStore, checkpoints *in
 			return
 		}
 		sendSuccess(c, map[string]interface{}{"executionId": outcome.Run.ID, "result": outcome.Result, "run": outcome.Run})
+	}
+}
+
+func handleOllamaChat(client *ollama.Client) gin.HandlerFunc {
+	if client == nil {
+		client = ollama.NewClient()
+	}
+	return func(c *gin.Context) {
+		var payload struct {
+			Model    string               `json:"model"`
+			Messages []ollama.ChatMessage `json:"messages"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			sendError(c, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+			return
+		}
+		model := strings.TrimSpace(payload.Model)
+		if model == "" {
+			model = ollama.DefaultModel
+		}
+		if len(payload.Messages) == 0 {
+			sendError(c, http.StatusBadRequest, "messages must contain at least one message")
+			return
+		}
+
+		messages := make([]ollama.ChatMessage, 0, len(payload.Messages))
+		for _, message := range payload.Messages {
+			role := strings.ToLower(strings.TrimSpace(message.Role))
+			if role == "" {
+				sendError(c, http.StatusBadRequest, "message role is required")
+				return
+			}
+			if role != "system" && role != "user" && role != "assistant" && role != "tool" {
+				sendError(c, http.StatusBadRequest, "message role must be one of: system, user, assistant, tool")
+				return
+			}
+			if strings.TrimSpace(message.Content) == "" {
+				sendError(c, http.StatusBadRequest, "message content is required")
+				return
+			}
+			messages = append(messages, ollama.ChatMessage{Role: role, Content: message.Content})
+		}
+
+		completion, err := client.Chat(c.Request.Context(), model, messages)
+		if err != nil {
+			sendError(c, http.StatusBadGateway, err.Error())
+			return
+		}
+		sendSuccess(c, map[string]any{
+			"model":   completion.Model,
+			"message": completion.Message,
+			"reply":   completion.Reply,
+			"usage":   completion.Usage,
+		})
 	}
 }
 
@@ -258,6 +313,7 @@ func NewRouter() *gin.Engine {
 
 	// Routes (start-only API)
 	r.GET("/health", handleHealth)
+	r.POST("/api/chat/ollama", handleOllamaChat(ollama.NewClient()))
 	r.POST("/workflow/start", handleStartWorkflow(baseDeps, runs, checkpoints))
 	r.GET("/workflows/files", func(c *gin.Context) {
 		workflows, err := listWorkflowFiles()

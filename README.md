@@ -34,6 +34,10 @@ Rivulet/
 └── go.work             # Go workspace definition
 ```
 
+## 🧭 Frontend Product Plan
+
+The dashboard UI is planned as a personal AI workflow console rather than a single generic chat surface. See [docs/frontend-information-architecture.md](docs/frontend-information-architecture.md) for the MVP information architecture, page hierarchy, low-fidelity wireframes, reusable workflow workspace pattern, example workflow adaptations, component system, and UX principles.
+
 ## 🎯 Quick Start
 
 ### 1. Install and Build
@@ -229,11 +233,11 @@ data/files/image_to_latex_workflow/
 
 ### 9. Dashboard Metrics
 
-- Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the FlowTracker dashboard powered by `apps/frontend/index.html`.
+- Visit `http://localhost:8080/` after running `./bin/rivulet server` to open the Rivulet React console powered by `apps/frontend/index.html`, `apps/frontend/app.js`, and `apps/frontend/styles.css`.
 - The UI is served directly by the Go API (configurable via `RIV_FRONTEND_DIR`) so the backend and frontend ship together in the monorepo.
-- The dashboard view calls `/dashboard/metrics`, which aggregates execution stats from `infra.InstanceManager`—success/fail counts, queue depth, and per-instance timings.
-- The workflows view calls `/workflows/files`, `/instances`, `/instances/:id`, `/instances/:id/logs`, `/instances/:id/enqueue`, `/runs`, `/schedules`, and `/reviews` so you can create instances, enqueue sample data, inspect recent persisted runs, replay a prior execution, manage interval schedules, and approve/resume or reject AI review requests from the browser.
-- Extend the cards by enhancing `infra.DashboardMetrics()` and updating the frontend HTML, or replace the static assets with a compiled SPA that targets the same endpoint.
+- The console calls `/dashboard/metrics`, `/workflows`, `/workflows/files`, `/runs`, and `/reviews`, with sample fallback data for an empty local environment.
+- The workspace uses the product plan in `docs/frontend-information-architecture.md`: workflows, execution traces, human review, artifacts, and settings are separate surfaces instead of one generic chat screen.
+- Extend the live cards by enhancing `infra.DashboardMetrics()` and the persisted workflow/run/review API responses consumed by the React components.
 
 ### 10. Current API Surface
 

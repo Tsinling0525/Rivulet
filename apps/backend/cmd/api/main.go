@@ -24,6 +24,7 @@ func main() {
 	fmt.Printf("🚀 Starting Rivulet API Server with Gin on port %s\n", port)
 	fmt.Printf("📡 Endpoints:\n")
 	fmt.Printf("   GET    /health                 - Health check\n")
+	fmt.Printf("   POST   /api/chat/ollama        - Chat with local Ollama\n")
 	fmt.Printf("   POST   /workflow/start         - Run a workflow immediately\n")
 	fmt.Printf("   GET    /workflows/files        - List workflow JSON files\n")
 	fmt.Printf("   GET    /workflows              - List persisted workflows\n")

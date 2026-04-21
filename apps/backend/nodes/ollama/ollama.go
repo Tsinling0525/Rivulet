@@ -38,7 +38,7 @@ func (n *Node) Process(ctx context.Context, wf model.Workflow, node model.Node, 
 	}
 	n.cfg.Endpoint, _ = node.Config["endpoint"].(string)
 	if n.cfg.Endpoint == "" {
-		n.cfg.Endpoint = "http://localhost:11434/api/generate"
+		n.cfg.Endpoint = DefaultGenerateEndpoint
 	}
 
 	client := &http.Client{Timeout: 60 * time.Second}
