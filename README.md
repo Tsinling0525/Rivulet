@@ -305,7 +305,63 @@ if __name__ == "__main__":
 - `ollama` – render a prompt and call a local Ollama model
 - `chatgpt` – render a prompt and call the OpenAI Responses API by default, with legacy Chat Completions compatibility when explicitly configured
 - `eval:node` – score upstream AI output with deterministic criteria or an OpenAI-compatible judge model, emitting `pass`/`fail` ports
+- `wasm:node` – run a WASI WebAssembly module as a custom node without recompiling the backend
 - `python:script` – run local Python script over an attached file and put stdout (e.g., LaTeX) into item
+
+WASM node config example:
+
+```json
+{
+  "id": "wasm1",
+  "type": "wasm:node",
+  "name": "Custom WASM Transform",
+  "parameters": {
+    "module": "data/plugins/my_node.wasm",
+    "timeout_seconds": 10,
+    "args": ["mode=fast"],
+    "env": { "RIVULET_NODE": "my_node" },
+    "mounts": [
+      { "host": "data/files", "guest": "/files", "read_only": true }
+    ]
+  }
+}
+```
+
+WASM nodes use a WASI stdin/stdout ABI so plugins can be built from Rust, C/C++, Go WASI, or Python-on-WASI runtimes. The module receives JSON on stdin:
+
+```json
+{
+  "workflow": { "id": "workflow-id", "name": "Workflow", "kind": "automation" },
+  "node": { "id": "wasm1", "name": "Custom WASM Transform", "type": "wasm:node" },
+  "config": { "module": "data/plugins/my_node.wasm", "timeout_seconds": 10 },
+  "items": [{ "input": "value" }]
+}
+```
+
+It should write either a JSON array of output items or a response object with ports:
+
+```json
+{
+  "ports": {
+    "main": [{ "output": "value" }],
+    "pass": [{ "output": "value" }]
+  }
+}
+```
+
+For named WASM plugins, add a manifest under `data/plugins/*.json` (or set `RIV_WASM_PLUGIN_DIR`) and then use the declared `type` directly in workflows:
+
+```json
+{
+  "nodes": [
+    {
+      "type": "acme:classify",
+      "module": "classify.wasm",
+      "args": ["threshold=0.8"]
+    }
+  ]
+}
+```
 
 Eval node config example:
 
