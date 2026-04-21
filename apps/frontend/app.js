@@ -4,13 +4,13 @@ import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 const h = React.createElement;
 
 const navItems = [
-  { id: "home", label: "Home", icon: "H" },
-  { id: "research", label: "Research", icon: "R" },
-  { id: "create", label: "Create", icon: "C" },
-  { id: "track", label: "Track", icon: "T" },
-  { id: "library", label: "Library", icon: "L" },
-  { id: "automations", label: "Automations", icon: "A" },
-  { id: "system", label: "System", icon: "S" },
+  { id: "home",        label: "Home",     icon: "⌂" },
+  { id: "research",    label: "Research", icon: "◎" },
+  { id: "create",      label: "Create",   icon: "◆" },
+  { id: "track",       label: "Track",    icon: "◉" },
+  { id: "library",     label: "Library",  icon: "▣" },
+  { id: "automations", label: "Auto",     icon: "⚙" },
+  { id: "system",      label: "System",   icon: "△" },
 ];
 
 const pageRoutes = {
@@ -543,46 +543,52 @@ function App() {
   }[page];
 
   return h(
-    "div",
-    { className: "app-shell" },
-    h(Sidebar, { page, setPage: navigate, pendingReviews }),
+    React.Fragment,
+    null,
+    h(AppBackground),
     h(
-      "main",
-      { className: "main" },
-      h(Topbar, { workflows, selectedWorkflow, query, setQuery, onWorkflowChange: openDomainWorkflow, reload: data.reload }),
+      "div",
+      { className: "app-shell" },
       h(
-        "div",
-        { className: "content" },
-        data.loading ? h("div", { className: "loading-strip" }, "Loading live Rivulet data...") : null,
-        data.warnings.map((warning) => h("div", { className: "loading-strip", key: warning }, warning)),
-        pageNode,
-      ),
-    ),
-  );
-}
-
-function Sidebar({ page, setPage, pendingReviews }) {
-  return h(
-    "aside",
-    { className: "sidebar" },
-    h("div", { className: "brand" }, h("div", { className: "brand-title" }, "Rivulet"), h(Badge, { tone: "blue" }, "Console")),
-    h(
-      "nav",
-      { className: "nav" },
-      navItems.map((item) =>
+        "main",
+        { className: "main" },
+        h(Topbar, { workflows, selectedWorkflow, query, setQuery, onWorkflowChange: openDomainWorkflow, reload: data.reload }),
         h(
-          "button",
-          {
-            key: item.id,
-            className: `nav-button ${page === item.id ? "active" : ""}`,
-            onClick: () => setPage(item.id),
-          },
-          h("span", { className: "nav-label" }, h("span", { className: "nav-icon" }, item.icon), item.label),
-          item.id === "system" && pendingReviews > 0 ? h("span", { className: "nav-count" }, pendingReviews) : null,
+          "div",
+          { className: "content" },
+          data.loading ? h("div", { className: "loading-strip" }, "Loading live Rivulet data...") : null,
+          data.warnings.map((warning) => h("div", { className: "loading-strip", key: warning }, warning)),
+          pageNode,
         ),
       ),
     ),
-    h("div", { className: "sidebar-note" }, "Research, creation, and tracking are the primary surfaces. Workflows and traces live under Automations and System."),
+    h(DynamicDock, { page, setPage: navigate, pendingReviews }),
+  );
+}
+
+function AppBackground() {
+  return h("div", { className: "app-bg" });
+}
+
+function DynamicDock({ page, setPage, pendingReviews }) {
+  return h(
+    "nav",
+    { className: "dynamic-dock" },
+    navItems.map((item) =>
+      h(
+        "button",
+        {
+          key: item.id,
+          className: `dock-btn ${page === item.id ? "active" : ""}`,
+          onClick: () => setPage(item.id),
+        },
+        h("span", { className: "dock-icon" }, item.icon),
+        h("span", { className: "dock-label" }, item.label),
+        item.id === "system" && pendingReviews > 0
+          ? h("span", { className: "dock-badge" }, pendingReviews)
+          : null,
+      ),
+    ),
   );
 }
 
@@ -593,6 +599,7 @@ function Topbar({ workflows, selectedWorkflow, query, setQuery, onWorkflowChange
     h(
       "div",
       { className: "topbar-left" },
+      h("div", { className: "brand" }, h("div", { className: "brand-title" }, "Rivulet"), h(Badge, { tone: "blue" }, "Console")),
       h("input", {
         className: "search",
         value: query,
@@ -765,7 +772,6 @@ function DomainSummary({ items }) {
 
 function ResearchPage({ workflows, runs, openRun }) {
   const workflow = workflowByType(workflows, "paper") || workflows.find((item) => item.id === "paper-search") || sampleWorkflows[0];
-  const researchRuns = runs.filter((run) => run.workflow_id === workflow.id);
 
   return h(
     React.Fragment,
@@ -773,10 +779,9 @@ function ResearchPage({ workflows, runs, openRun }) {
     h(PageHeader, {
       eyebrow: "Research",
       title: "Research hub",
-      description: "Search papers, build summaries, track citations, and keep research history without exposing workflow internals first.",
+      description: "Search papers, build summaries, and manage citations.",
       actions: [
         h("button", { className: "button primary", key: "search" }, "New Paper Search"),
-        h("button", { className: "button", key: "history", onClick: () => researchRuns[0] && openRun(researchRuns[0].id) }, "System Trace"),
       ],
     }),
     h(DomainSummary, {
@@ -786,13 +791,12 @@ function ResearchPage({ workflows, runs, openRun }) {
         ["Needs review", "1"],
       ],
     }),
-    h(WorkspacePage, { workflow, runs, openRun }),
+    h(WorkspacePage, { workflow, runs, openRun, taskMode: true }),
   );
 }
 
 function CreatePage({ workflows, runs, openRun }) {
   const workflow = workflowByType(workflows, "video") || workflows.find((item) => item.id === "video-generator") || sampleWorkflows[1];
-  const createRuns = runs.filter((run) => run.workflow_id === workflow.id);
 
   return h(
     React.Fragment,
@@ -800,10 +804,9 @@ function CreatePage({ workflows, runs, openRun }) {
     h(PageHeader, {
       eyebrow: "Create",
       title: "Content creation hub",
-      description: "Turn source material into scripts, storyboards, captions, and reviewable video outputs.",
+      description: "Turn source material into scripts, storyboards, captions, and video outputs.",
       actions: [
         h("button", { className: "button primary", key: "video" }, "New Video"),
-        h("button", { className: "button", key: "trace", onClick: () => createRuns[0] && openRun(createRuns[0].id) }, "System Trace"),
       ],
     }),
     h(DomainSummary, {
@@ -813,7 +816,7 @@ function CreatePage({ workflows, runs, openRun }) {
         ["Pending approval", "1"],
       ],
     }),
-    h(WorkspacePage, { workflow, runs, openRun }),
+    h(WorkspacePage, { workflow, runs, openRun, taskMode: true }),
   );
 }
 
@@ -827,7 +830,7 @@ function TrackPage({ workflows, runs, assets }) {
     h(PageHeader, {
       eyebrow: "Track",
       title: "Meal logging",
-      description: "Log meals, estimate nutrition, inspect confidence flags, and export personal history.",
+      description: "Log meals, estimate nutrition, and review your daily history.",
       actions: [h("button", { className: "button primary", key: "meal" }, "Log Meal")],
     }),
     h(DomainSummary, {
@@ -840,7 +843,7 @@ function TrackPage({ workflows, runs, assets }) {
     h(
       "section",
       { className: "workspace" },
-      h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Meal Input")), h("div", { className: "panel-body workspace-stack" }, h(WorkspaceInputs, { workflow, template }))),
+      h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Meal Input")), h("div", { className: "panel-body workspace-stack" }, h(WorkspaceInputs, { workflow, template, taskMode: true, actionLabel: "Log Meal" }))),
       h("section", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Nutrition Workspace")), h("div", { className: "panel-body" }, h(MealInteractionCenter))),
       h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Outputs"), h(StatusBadge, { status: "ready" })), h("div", { className: "panel-body workspace-stack" }, h(WorkspaceOutputs, { template }), h("p", { className: "subtle" }, `${assets.filter((asset) => asset.workflow_id === workflow.id).length} library items linked to meal tracking.`))),
     ),
@@ -887,7 +890,7 @@ const workspaceRegistry = {
   video: VideoWorkspace,
 };
 
-function WorkspacePage({ workflow, runs, openRun }) {
+function WorkspacePage({ workflow, runs, openRun, taskMode = false }) {
   if (!workflow) return h(EmptyState, { title: "No workflow selected", body: "Choose a workflow to open its workspace." });
   const currentRun = runs.find((run) => run.workflow_id === workflow.id) || sampleRuns.find((run) => run.workflow_id === workflow.id) || sampleRuns[0];
   const workspaceType = normalizeWorkspaceType(workflow.ai?.workspaceType);
@@ -896,7 +899,7 @@ function WorkspacePage({ workflow, runs, openRun }) {
   return h(
     React.Fragment,
     null,
-    h(PageHeader, {
+    !taskMode && h(PageHeader, {
       eyebrow: "Workspace",
       title: workflow.name,
       description: workflow.ai?.purpose || workflow.description,
@@ -908,7 +911,7 @@ function WorkspacePage({ workflow, runs, openRun }) {
         h("button", { className: "button", key: "history", onClick: () => openRun(currentRun?.id) }, "Trace"),
       ],
     }),
-    h(WorkspaceComponent, { workflow, run: currentRun }),
+    h(WorkspaceComponent, { workflow, run: currentRun, taskMode }),
   );
 }
 
@@ -936,42 +939,42 @@ function GenericWorkspace({ workflow, run }) {
   });
 }
 
-function PaperWorkspace({ workflow, run }) {
+function PaperWorkspace({ workflow, run, taskMode = false }) {
   const template = workflowTemplate(workflow);
   const [tab, setTab] = useState("research");
 
   return h(WorkspaceLayout, {
-    left: h(WorkspaceInputs, { workflow, template }),
+    left: h(WorkspaceInputs, { workflow, template, taskMode, actionLabel: "Search Papers" }),
     centerTitle: "Paper Research",
-    centerTabs: h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["research", "Research"], ["execution", "Execution"], ["observability", "Observability"]] }),
-    center: tab === "research" ? h(PaperInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run }),
+    centerTabs: taskMode ? null : h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["research", "Research"], ["execution", "Execution"], ["observability", "Observability"]] }),
+    center: taskMode ? h(PaperInteractionCenter, { workflow }) : (tab === "research" ? h(PaperInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run })),
     rightStatus: h(StatusBadge, { status: run?.status || "ready" }),
     right: h(WorkspaceOutputs, { template }),
   });
 }
 
-function VideoWorkspace({ workflow, run }) {
+function VideoWorkspace({ workflow, run, taskMode = false }) {
   const template = workflowTemplate(workflow);
   const [tab, setTab] = useState("production");
 
   return h(WorkspaceLayout, {
-    left: h(WorkspaceInputs, { workflow, template }),
+    left: h(WorkspaceInputs, { workflow, template, taskMode, actionLabel: "Generate Video" }),
     centerTitle: "Video Production",
-    centerTabs: h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["production", "Production"], ["execution", "Execution"], ["observability", "Observability"]] }),
-    center: tab === "production" ? h(VideoInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run }),
+    centerTabs: taskMode ? null : h(WorkspaceTabs, { value: tab, onChange: setTab, items: [["production", "Production"], ["execution", "Execution"], ["observability", "Observability"]] }),
+    center: taskMode ? h(VideoInteractionCenter, { workflow }) : (tab === "production" ? h(VideoInteractionCenter, { workflow }) : tab === "execution" ? h(ExecutionSteps, { steps: template.steps, run }) : h(EventTimeline, { run })),
     rightStatus: h(StatusBadge, { status: run?.status || "ready" }),
     right: h(WorkspaceOutputs, { template }),
   });
 }
 
-function WorkspaceInputs({ workflow, template }) {
+function WorkspaceInputs({ workflow, template, taskMode = false, actionLabel = "Run Workflow" }) {
   return h(
     React.Fragment,
     null,
     template.inputFields.map(([label, value]) => h("div", { className: "field", key: label }, h("label", null, label), h("input", { className: "input", defaultValue: value }))),
-    h("div", { className: "field" }, h("label", null, "Model"), h("select", { className: "select", defaultValue: workflow.ai?.models?.[0] || "" }, (workflow.ai?.models?.length ? workflow.ai.models : ["Not declared"]).map((model) => h("option", { key: model, value: model }, model)))),
-    h("div", { className: "field" }, h("label", null, "Workspace Type"), h("input", { className: "input", value: workflow.ai?.workspaceType || "default", readOnly: true })),
-    h("button", { className: "button primary" }, "Run Workflow"),
+    !taskMode && h("div", { className: "field" }, h("label", null, "Model"), h("select", { className: "select", defaultValue: workflow.ai?.models?.[0] || "" }, (workflow.ai?.models?.length ? workflow.ai.models : ["Not declared"]).map((model) => h("option", { key: model, value: model }, model)))),
+    !taskMode && h("div", { className: "field" }, h("label", null, "Workspace Type"), h("input", { className: "input", value: workflow.ai?.workspaceType || "default", readOnly: true })),
+    h("button", { className: "button primary" }, actionLabel),
   );
 }
 
