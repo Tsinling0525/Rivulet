@@ -577,6 +577,82 @@
         color: var(--text-secondary);
       }
 
+      .reasoning-layout {
+        align-items: start;
+      }
+
+      .reasoning-list {
+        max-height: 620px;
+        overflow: auto;
+      }
+
+      .reasoning-trace-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .reasoning-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .reasoning-step {
+        display: grid;
+        grid-template-columns: 92px 1fr;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .reasoning-step-time {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface-muted);
+        padding: 10px;
+        text-align: center;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .reasoning-step-time span {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+
+      .reasoning-step-body {
+        border-left: 3px solid var(--accent);
+        padding-left: 14px;
+        min-width: 0;
+      }
+
+      .reasoning-step-body h4 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+
+      .reasoning-step-body p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+
+      .reasoning-empty-note {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        color: var(--text-secondary);
+        background: var(--surface-muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
       @media (max-width: 1080px) {
         .split-layout {
           grid-template-columns: 1fr;
@@ -605,6 +681,14 @@
           justify-content: flex-start;
           flex-wrap: wrap;
         }
+
+        .reasoning-step {
+          grid-template-columns: 1fr;
+        }
+
+        .reasoning-step-time {
+          text-align: left;
+        }
       }
     </style>
   </head>
@@ -617,6 +701,7 @@
         </div>
         <nav>
           <button class="nav-button active" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-button" type="button" data-view="reasoning">Reasoning Clock</button>
           <button class="nav-button" type="button" data-view="workflows">Workflows</button>
         </nav>
         <div class="nav-note">
@@ -735,6 +820,47 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-reasoning">
+          <section class="section">
+            <div class="section-title">
+              <h2>Reasoning Clock</h2>
+              <span class="helper">Live traces use provider-visible reasoning summaries and lifecycle events.</span>
+            </div>
+            <div class="card-grid">
+              <div class="card">
+                <h3>Active Reasoning Traces</h3>
+                <span class="metric" id="reasoningActiveCount">--</span>
+                <span class="subtext">Currently executing with live events</span>
+              </div>
+              <div class="card">
+                <h3>Average Step Latency</h3>
+                <span class="metric" id="reasoningAverageLatency">--</span>
+                <span class="subtext">Across visible reasoning steps</span>
+              </div>
+            </div>
+            <div class="split-layout reasoning-layout">
+              <div class="card">
+                <div class="section-title">
+                  <h3>Recent Traces</h3>
+                  <span class="status-pill" id="reasoningTraceCount">0 traces</span>
+                </div>
+                <div class="list reasoning-list" id="reasoningTraceList">
+                  <div class="empty-state">No reasoning traces recorded yet.</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="section-title">
+                  <h3>Step Timeline</h3>
+                  <span class="status-pill" id="reasoningDetailStatus">idle</span>
+                </div>
+                <div id="reasoningTraceDetail">
+                  <div class="empty-state">Select a reasoning trace to inspect timing.</div>
+                </div>
+              </div>
             </div>
           </section>
         </section>
@@ -887,12 +1013,19 @@
         selectedInstanceLogs: [],
         selectedInstanceRuns: [],
         executionMonitor: null,
+        reasoningTraces: [],
+        selectedReasoningTraceKey: "",
+        reasoningPollTimer: null,
       };
 
       const viewMeta = {
         dashboard: {
           title: "Dashboard",
           subtitle: "Monitor workflow efficiency and team performance.",
+        },
+        reasoning: {
+          title: "Reasoning Clock",
+          subtitle: "Inspect provider-visible AI reasoning steps and per-step latency.",
         },
         workflows: {
           title: "Workflows",
@@ -908,6 +1041,12 @@
       const distributionBarEl = document.getElementById("taskDistributionBar");
       const teamTableBody = document.getElementById("teamTableBody");
       const promptVersionTableBody = document.getElementById("promptVersionTableBody");
+      const reasoningActiveCountEl = document.getElementById("reasoningActiveCount");
+      const reasoningAverageLatencyEl = document.getElementById("reasoningAverageLatency");
+      const reasoningTraceCountEl = document.getElementById("reasoningTraceCount");
+      const reasoningTraceListEl = document.getElementById("reasoningTraceList");
+      const reasoningTraceDetailEl = document.getElementById("reasoningTraceDetail");
+      const reasoningDetailStatusEl = document.getElementById("reasoningDetailStatus");
       const instanceSummaryEl = document.getElementById("instanceSummary");
       const lastUpdatedEl = document.getElementById("lastUpdated");
       const errorMessageEl = document.getElementById("errorMessage");
@@ -964,6 +1103,11 @@
         pageTitleEl.textContent = viewMeta[view].title;
         pageSubtitleEl.textContent = viewMeta[view].subtitle;
         showError("");
+        if (view === "reasoning") {
+          startReasoningClockPoll();
+        } else {
+          stopReasoningClockPoll();
+        }
       }
 
       function formatTrend(element, value) {
@@ -998,6 +1142,17 @@
           return `${minutes.toFixed(0)} Min`;
         }
         return `${seconds.toFixed(0)} Sec`;
+      }
+
+      function formatMilliseconds(ms) {
+        const value = Number(ms || 0);
+        if (value <= 0) {
+          return "0 ms";
+        }
+        if (value >= 1000) {
+          return `${(value / 1000).toFixed(1)} s`;
+        }
+        return `${value.toFixed(0)} ms`;
       }
 
       function formatInterval(seconds) {
@@ -1218,6 +1373,153 @@
         });
       }
 
+      function reasoningTraceKey(trace) {
+        return `${trace.execution_id || ""}::${trace.node_id || ""}`;
+      }
+
+      function renderReasoningClock(traces) {
+        state.reasoningTraces = Array.isArray(traces) ? traces : [];
+        if (!state.selectedReasoningTraceKey && state.reasoningTraces.length > 0) {
+          state.selectedReasoningTraceKey = reasoningTraceKey(state.reasoningTraces[0]);
+        }
+        if (
+          state.selectedReasoningTraceKey &&
+          !state.reasoningTraces.some((trace) => reasoningTraceKey(trace) === state.selectedReasoningTraceKey)
+        ) {
+          state.selectedReasoningTraceKey = state.reasoningTraces[0] ? reasoningTraceKey(state.reasoningTraces[0]) : "";
+        }
+
+        const liveCount = state.reasoningTraces.filter((trace) => trace.live).length;
+        const steps = state.reasoningTraces.flatMap((trace) => trace.steps || []);
+        const latencySteps = steps.filter((step) => Number(step.latency_ms || 0) > 0);
+        const averageLatency =
+          latencySteps.length > 0
+            ? latencySteps.reduce((sum, step) => sum + Number(step.latency_ms || 0), 0) / latencySteps.length
+            : 0;
+
+        reasoningActiveCountEl.textContent = String(liveCount);
+        reasoningAverageLatencyEl.textContent = averageLatency ? formatMilliseconds(averageLatency) : "--";
+        reasoningTraceCountEl.textContent = `${state.reasoningTraces.length} trace${state.reasoningTraces.length === 1 ? "" : "s"}`;
+
+        renderReasoningTraceList();
+        renderReasoningTraceDetail();
+      }
+
+      function renderReasoningTraceList() {
+        reasoningTraceListEl.innerHTML = "";
+        if (state.reasoningTraces.length === 0) {
+          reasoningTraceListEl.innerHTML = '<div class="empty-state">No reasoning traces recorded yet.</div>';
+          return;
+        }
+
+        state.reasoningTraces.forEach((trace) => {
+          const key = reasoningTraceKey(trace);
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "list-item";
+          if (key === state.selectedReasoningTraceKey) {
+            item.classList.add("selected");
+          }
+          const modelLabel = [trace.provider, trace.model].filter(Boolean).join(" / ") || "AI model";
+          const latency = trace.total_latency_ms ? formatMilliseconds(trace.total_latency_ms) : "--";
+          item.innerHTML = `
+            <div>
+              <p class="list-item-title">${escapeHTML(trace.workflow_name || trace.workflow_id || "Workflow")}</p>
+              <div class="list-item-meta">${escapeHTML(trace.node_id || "node")} · ${escapeHTML(modelLabel)}</div>
+              <div class="reasoning-trace-meta">
+                <span class="status-pill ${runStatusClass(trace.status)}">${escapeHTML(trace.status || "unknown")}</span>
+                ${trace.live ? '<span class="status-pill success">live</span>' : ""}
+                ${trace.supports_reasoning ? '<span class="status-pill">reasoning model</span>' : ""}
+              </div>
+              <div class="list-item-meta">${escapeHTML(String(trace.step_count || 0))} steps · ${escapeHTML(latency)}</div>
+            </div>
+          `;
+          item.addEventListener("click", () => {
+            state.selectedReasoningTraceKey = key;
+            renderReasoningTraceList();
+            renderReasoningTraceDetail();
+          });
+          reasoningTraceListEl.appendChild(item);
+        });
+      }
+
+      function renderReasoningTraceDetail() {
+        const trace = state.reasoningTraces.find((item) => reasoningTraceKey(item) === state.selectedReasoningTraceKey);
+        if (!trace) {
+          reasoningDetailStatusEl.textContent = "idle";
+          reasoningDetailStatusEl.className = "status-pill";
+          reasoningTraceDetailEl.innerHTML = '<div class="empty-state">Select a reasoning trace to inspect timing.</div>';
+          return;
+        }
+
+        reasoningDetailStatusEl.textContent = trace.live ? "live" : trace.status || "recorded";
+        reasoningDetailStatusEl.className = `status-pill ${trace.live ? "success" : runStatusClass(trace.status)}`;
+        const startedAt = formatTimestamp(trace.started_at);
+        const updatedAt = formatTimestamp(trace.updated_at);
+        const modelLabel = [trace.provider, trace.model].filter(Boolean).join(" / ") || "AI model";
+        const steps = trace.steps || [];
+        const hiddenCotNote = trace.supports_reasoning
+          ? "Provider-visible reasoning summaries are shown when available; hidden model chain-of-thought is not exposed."
+          : "This model call did not advertise explicit reasoning support, so the clock shows lifecycle and routing steps.";
+
+        reasoningTraceDetailEl.innerHTML = `
+          <div class="stack">
+            <div class="detail-grid">
+              <div class="detail-stat">
+                <div class="helper">Execution</div>
+                <strong>${escapeHTML(trace.execution_id || "--")}</strong>
+              </div>
+              <div class="detail-stat">
+                <div class="helper">Model</div>
+                <strong>${escapeHTML(modelLabel)}</strong>
+              </div>
+              <div class="detail-stat">
+                <div class="helper">Total Latency</div>
+                <strong>${escapeHTML(formatMilliseconds(trace.total_latency_ms))}</strong>
+              </div>
+              <div class="detail-stat">
+                <div class="helper">Updated</div>
+                <strong>${escapeHTML(updatedAt)}</strong>
+                <code>Started ${escapeHTML(startedAt)}</code>
+              </div>
+            </div>
+            <div class="reasoning-empty-note">${escapeHTML(hiddenCotNote)}</div>
+            ${
+              trace.prompt_preview
+                ? `<div class="field"><label>Prompt Preview</label><pre class="mini-pre">${escapeHTML(trace.prompt_preview)}</pre></div>`
+                : ""
+            }
+            <div class="reasoning-timeline">
+              ${
+                steps.length === 0
+                  ? '<div class="empty-state">No visible reasoning steps for this trace.</div>'
+                  : steps
+                      .map((step, index) => {
+                        const delta = step.delta_ms ? `+${formatMilliseconds(step.delta_ms)}` : index === 0 ? "start" : "";
+                        return `
+                          <div class="reasoning-step">
+                            <div class="reasoning-step-time">
+                              ${escapeHTML(formatMilliseconds(step.latency_ms))}
+                              <span>${escapeHTML(delta)}</span>
+                            </div>
+                            <div class="reasoning-step-body">
+                              <h4>${escapeHTML(step.title || `Step ${index + 1}`)}</h4>
+                              <p>${escapeHTML(step.text || step.source || "No step text provided.")}</p>
+                              <div class="reasoning-trace-meta">
+                                ${step.source ? `<span class="status-pill">${escapeHTML(step.source)}</span>` : ""}
+                                ${step.status ? `<span class="status-pill ${runStatusClass(step.status)}">${escapeHTML(step.status)}</span>` : ""}
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      })
+                      .join("")
+              }
+            </div>
+          </div>
+        `;
+      }
+
       function statusClass(stateValue) {
         if (stateValue === "running") return "success";
         if (stateValue === "stopped") return "danger";
@@ -1353,6 +1655,30 @@
         state.executionMonitor.timerId = setTimeout(() => {
           void pollExecutionMonitor();
         }, delayMs);
+      }
+
+      function stopReasoningClockPoll() {
+        if (state.reasoningPollTimer) {
+          clearTimeout(state.reasoningPollTimer);
+        }
+        state.reasoningPollTimer = null;
+      }
+
+      function startReasoningClockPoll() {
+        stopReasoningClockPoll();
+        const poll = async () => {
+          if (state.currentView !== "reasoning") {
+            stopReasoningClockPoll();
+            return;
+          }
+          try {
+            await fetchMetrics();
+          } catch (err) {
+            showError(err.message || "Unable to refresh reasoning clock.");
+          }
+          state.reasoningPollTimer = setTimeout(poll, 1200);
+        };
+        state.reasoningPollTimer = setTimeout(poll, 0);
       }
 
       function selectWorkflow(path) {
@@ -1710,6 +2036,7 @@
         renderTaskDistribution(metrics.task_status);
         renderTeamPerformance(metrics.team_performance);
         renderPromptVersions(metrics.prompt_versions);
+        renderReasoningClock(metrics.reasoning_traces);
         formatTrend(completionTrendEl, metrics.workflow_completion_trend);
         formatTrend(averageTrendEl, metrics.average_task_completion_trend);
         instanceSummaryEl.textContent = `Instances: ${metrics.instances ?? 0}`;
@@ -1957,7 +2284,7 @@
       }
 
       async function refreshCurrentView() {
-        if (state.currentView === "dashboard") {
+        if (state.currentView === "dashboard" || state.currentView === "reasoning") {
           await fetchMetrics();
           return;
         }

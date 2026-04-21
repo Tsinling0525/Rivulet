@@ -91,6 +91,33 @@ func TestExtractOutputParsesResponsesOutputText(t *testing.T) {
 	}
 }
 
+func TestExtractGenerationResultParsesResponsesReasoningSummary(t *testing.T) {
+	n := &ChatGPTNode{}
+	n.cfg.Model = "gpt-5-mini"
+	n.cfg.Endpoint = "https://api.openai.com/v1/responses"
+	body := []byte(`{
+		"output_text":"final answer",
+		"output":[
+			{"type":"reasoning","summary":[{"text":"Check the input shape.\nValidate the output contract."}]}
+		],
+		"usage":{"input_tokens":12,"output_tokens":5,"total_tokens":17}
+	}`)
+
+	result, err := n.extractGenerationResult(n.cfg.Endpoint, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != "final answer" {
+		t.Fatalf("expected final answer, got %q", result.Output)
+	}
+	if len(result.Reasoning) != 2 {
+		t.Fatalf("expected 2 reasoning steps, got %d: %#v", len(result.Reasoning), result.Reasoning)
+	}
+	if result.Reasoning[0].Source != "reasoning_summary" {
+		t.Fatalf("expected reasoning_summary source, got %q", result.Reasoning[0].Source)
+	}
+}
+
 func TestExtractOutputParsesLegacyChatCompletions(t *testing.T) {
 	n := &ChatGPTNode{}
 	body := []byte(`{"choices":[{"message":{"content":"legacy text"}}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}`)
@@ -109,6 +136,30 @@ func TestExtractOutputParsesLegacyChatCompletions(t *testing.T) {
 	}
 	if usage.Input != 9 || usage.Output != 4 || usage.Total != 13 {
 		t.Fatalf("unexpected usage: %+v", usage)
+	}
+}
+
+func TestExtractGenerationResultParsesReasoningContent(t *testing.T) {
+	n := &ChatGPTNode{}
+	n.cfg.Model = "deepseek-reasoner"
+	n.cfg.Endpoint = "https://api.deepseek.com/v1/chat/completions"
+	body := []byte(`{
+		"choices":[{"message":{"content":"legacy text","reasoning_content":"First inspect the request.\nThen choose a response."}}],
+		"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}
+	}`)
+
+	result, err := n.extractGenerationResult(n.cfg.Endpoint, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != "legacy text" {
+		t.Fatalf("expected legacy text, got %q", result.Output)
+	}
+	if len(result.Reasoning) != 2 {
+		t.Fatalf("expected 2 reasoning steps, got %d: %#v", len(result.Reasoning), result.Reasoning)
+	}
+	if result.Reasoning[0].Source != "reasoning_content" {
+		t.Fatalf("expected reasoning_content source, got %q", result.Reasoning[0].Source)
 	}
 }
 

@@ -95,9 +95,10 @@ type ExecutionRecord struct {
 
 // ActiveExecution describes the current in-flight execution, if any.
 type ActiveExecution struct {
-	ExecutionID string    `json:"execution_id,omitempty"`
-	StartedAt   time.Time `json:"started_at,omitempty"`
-	IsExecuting bool      `json:"is_executing"`
+	ExecutionID string     `json:"execution_id,omitempty"`
+	StartedAt   time.Time  `json:"started_at,omitempty"`
+	IsExecuting bool       `json:"is_executing"`
+	Events      []RunEvent `json:"events,omitempty"`
 }
 
 // InstanceSnapshot captures a consistent view of instance state and metrics.
@@ -117,6 +118,7 @@ func (i *Instance) Snapshot() InstanceSnapshot {
 	statsCopy := i.stats
 	lastRunCopy := i.lastRun
 	activeCopy := i.active
+	activeCopy.Events = append([]RunEvent(nil), i.active.Events...)
 	i.statsMu.Unlock()
 
 	return InstanceSnapshot{
@@ -128,6 +130,38 @@ func (i *Instance) Snapshot() InstanceSnapshot {
 		LastRun:     lastRunCopy,
 		Active:      activeCopy,
 	}
+}
+
+type instanceEventBus struct {
+	inst *Instance
+}
+
+func (b instanceEventBus) Emit(ctx context.Context, event string, fields map[string]any) error {
+	if b.inst == nil {
+		return nil
+	}
+	copied := map[string]any{}
+	for key, value := range fields {
+		copied[key] = value
+	}
+	nodeID := ""
+	if raw, ok := fields["node"]; ok {
+		nodeID = fmt.Sprint(raw)
+	}
+	b.inst.statsMu.Lock()
+	if b.inst.active.IsExecuting {
+		b.inst.active.Events = append(b.inst.active.Events, RunEvent{
+			Type:       event,
+			OccurredAt: time.Now().UTC(),
+			NodeID:     nodeID,
+			Fields:     copied,
+		})
+		if len(b.inst.active.Events) > 200 {
+			b.inst.active.Events = b.inst.active.Events[len(b.inst.active.Events)-200:]
+		}
+	}
+	b.inst.statsMu.Unlock()
+	return nil
 }
 
 type InstanceManager struct {
@@ -252,7 +286,9 @@ func (m *InstanceManager) createFromRequest(path, workflowID string, version int
 				}
 				inst.statsMu.Unlock()
 
-				outcome, err := ExecuteWorkflow(ctx, inst.deps, m.runs, ExecuteRequest{
+				runDeps := inst.deps
+				runDeps.Bus = instanceEventBus{inst: inst}
+				outcome, err := ExecuteWorkflow(ctx, runDeps, m.runs, ExecuteRequest{
 					RunID:           execID,
 					WorkflowID:      inst.WorkflowID,
 					WorkflowVersion: inst.WorkflowVersion,

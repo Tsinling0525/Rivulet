@@ -77,14 +77,28 @@ func (n *Node) Process(ctx context.Context, wf model.Workflow, node model.Node, 
 		}
 		req.Header.Set("Content-Type", "application/json")
 		start := time.Now()
+		n.EmitAIReasoningStep(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIReasoningStep{
+			Provider:  "ollama",
+			Model:     n.cfg.Model,
+			Endpoint:  n.cfg.Endpoint,
+			Index:     1,
+			Title:     "Prompt submitted",
+			Text:      "Request sent to the local model endpoint.",
+			Source:    "lifecycle",
+			LatencyMS: 0,
+			DeltaMS:   0,
+			Status:    "running",
+		})
 		resp, err := client.Do(req)
 		if err != nil {
+			n.emitFailureStep(ctx, wf, node, time.Since(start), err)
 			n.emitCall(ctx, wf, node, prompt, "", 0, 0, time.Since(start), err)
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			err := fmt.Errorf("ollama error: status %s", resp.Status)
+			n.emitFailureStep(ctx, wf, node, time.Since(start), err)
 			n.emitCall(ctx, wf, node, prompt, "", 0, 0, time.Since(start), err)
 			return nil, err
 		}
@@ -95,11 +109,28 @@ func (n *Node) Process(ctx context.Context, wf model.Workflow, node model.Node, 
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 			resp.Body.Close()
+			n.emitFailureStep(ctx, wf, node, time.Since(start), err)
 			n.emitCall(ctx, wf, node, prompt, "", parsed.PromptEvalCount, parsed.EvalCount, time.Since(start), err)
 			return nil, err
 		}
 		resp.Body.Close()
-		n.emitCall(ctx, wf, node, prompt, parsed.Response, parsed.PromptEvalCount, parsed.EvalCount, time.Since(start), nil)
+		elapsed := time.Since(start)
+		thinking := llm.ExtractThinkBlocks(parsed.Response)
+		steps := llm.ReasoningStepsFromText("ollama", n.cfg.Model, n.cfg.Endpoint, "think_block", "Reasoning", thinking, 2, elapsed)
+		n.EmitAIReasoningSteps(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, steps)
+		n.EmitAIReasoningStep(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIReasoningStep{
+			Provider:  "ollama",
+			Model:     n.cfg.Model,
+			Endpoint:  n.cfg.Endpoint,
+			Index:     len(steps) + 2,
+			Title:     "Response completed",
+			Text:      "Model response received and parsed.",
+			Source:    "lifecycle",
+			LatencyMS: elapsed.Milliseconds(),
+			DeltaMS:   elapsed.Milliseconds(),
+			Status:    "succeeded",
+		})
+		n.emitCall(ctx, wf, node, prompt, parsed.Response, parsed.PromptEvalCount, parsed.EvalCount, elapsed, nil)
 		llm.StoreSemanticCache("ollama", n.cfg.Model, string(node.ID), prompt, parsed.Response, cacheOpts)
 
 		out = append(out, model.Item{
@@ -147,6 +178,21 @@ func (n *Node) emitCall(ctx context.Context, wf model.Workflow, node model.Node,
 		Status:             status,
 		Error:              errText,
 		HumanReview:        humanReview,
+	})
+}
+
+func (n *Node) emitFailureStep(ctx context.Context, wf model.Workflow, node model.Node, latency time.Duration, err error) {
+	n.EmitAIReasoningStep(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIReasoningStep{
+		Provider:  "ollama",
+		Model:     n.cfg.Model,
+		Endpoint:  n.cfg.Endpoint,
+		Index:     2,
+		Title:     "Request failed",
+		Text:      err.Error(),
+		Source:    "lifecycle",
+		LatencyMS: latency.Milliseconds(),
+		DeltaMS:   latency.Milliseconds(),
+		Status:    "failed",
 	})
 }
 

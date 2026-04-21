@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"text/template"
 	"time"
 
@@ -50,6 +52,21 @@ type AIModelCall struct {
 	Error              string         `json:"error,omitempty"`
 	HumanReview        bool           `json:"human_review_required,omitempty"`
 	Extra              map[string]any `json:"extra,omitempty"`
+}
+
+// AIReasoningStep captures model-visible reasoning progress. It is intended for
+// provider-supplied summaries or explicit reasoning text, not hidden model state.
+type AIReasoningStep struct {
+	Provider  string
+	Model     string
+	Endpoint  string
+	Index     int
+	Title     string
+	Text      string
+	Source    string
+	LatencyMS int64
+	DeltaMS   int64
+	Status    string
 }
 
 func (b *LLMNodeBase) Init(ctx context.Context, deps plugin.Deps) error { b.deps = deps; return nil }
@@ -112,6 +129,129 @@ func (b *LLMNodeBase) EmitAIModelCall(ctx context.Context, execID string, wf mod
 		fields["extra"] = call.Extra
 	}
 	_ = b.deps.Bus.Emit(ctx, "ai_model_call", fields)
+}
+
+func (b *LLMNodeBase) EmitAIReasoningStep(ctx context.Context, execID string, wf model.Workflow, node model.Node, step AIReasoningStep) {
+	if b.deps.Bus == nil {
+		return
+	}
+	fields := map[string]any{
+		"exec":          execID,
+		"workflow":      wf.ID,
+		"workflow_kind": wf.Kind,
+		"node":          node.ID,
+		"provider":      step.Provider,
+		"model":         step.Model,
+		"endpoint":      step.Endpoint,
+		"step_index":    step.Index,
+		"title":         step.Title,
+		"text":          step.Text,
+		"source":        step.Source,
+		"latency_ms":    step.LatencyMS,
+		"delta_ms":      step.DeltaMS,
+		"status":        step.Status,
+	}
+	_ = b.deps.Bus.Emit(ctx, "ai_reasoning_step", fields)
+}
+
+func (b *LLMNodeBase) EmitAIReasoningSteps(ctx context.Context, execID string, wf model.Workflow, node model.Node, steps []AIReasoningStep) {
+	for _, step := range steps {
+		b.EmitAIReasoningStep(ctx, execID, wf, node, step)
+	}
+}
+
+func ReasoningStepsFromText(provider, model, endpoint, source, titlePrefix, text string, startIndex int, totalLatency time.Duration) []AIReasoningStep {
+	parts := SplitReasoningText(text)
+	if len(parts) == 0 {
+		return nil
+	}
+	steps := make([]AIReasoningStep, 0, len(parts))
+	totalMS := totalLatency.Milliseconds()
+	for idx, part := range parts {
+		stepIndex := startIndex + idx
+		latencyMS := totalMS
+		if totalMS > 0 {
+			latencyMS = int64(float64(totalMS) * (float64(idx+1) / float64(len(parts)+1)))
+		}
+		deltaMS := latencyMS
+		if idx > 0 {
+			deltaMS -= steps[idx-1].LatencyMS
+		}
+		steps = append(steps, AIReasoningStep{
+			Provider:  provider,
+			Model:     model,
+			Endpoint:  endpoint,
+			Index:     stepIndex,
+			Title:     fmt.Sprintf("%s %d", titlePrefix, idx+1),
+			Text:      part,
+			Source:    source,
+			LatencyMS: latencyMS,
+			DeltaMS:   deltaMS,
+			Status:    "streamed",
+		})
+	}
+	return steps
+}
+
+func SplitReasoningText(text string) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	paragraphs := regexp.MustCompile(`\n\s*\n+`).Split(text, -1)
+	if len(paragraphs) == 1 {
+		lines := strings.Split(text, "\n")
+		parts := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(strings.TrimLeft(line, "-*0123456789. )"))
+			if line != "" {
+				parts = append(parts, line)
+			}
+		}
+		if len(parts) > 1 {
+			return limitReasoningSteps(parts)
+		}
+	}
+
+	parts := make([]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		paragraph = strings.TrimSpace(paragraph)
+		if paragraph != "" {
+			parts = append(parts, paragraph)
+		}
+	}
+	return limitReasoningSteps(parts)
+}
+
+func ExtractThinkBlocks(text string) string {
+	matches := regexp.MustCompile(`(?is)<think>\s*(.*?)\s*</think>`).FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
+			parts = append(parts, strings.TrimSpace(match[1]))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func limitReasoningSteps(parts []string) []string {
+	const maxSteps = 12
+	const maxChars = 420
+	if len(parts) > maxSteps {
+		parts = parts[:maxSteps]
+	}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if len(part) > maxChars {
+			part = part[:maxChars] + "..."
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 func PromptHash(prompt string) string {

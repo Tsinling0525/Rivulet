@@ -344,6 +344,18 @@ func (n *Node) emitCall(ctx context.Context, wf model.Workflow, node model.Node,
 	extra["route"] = decision.Route.Name
 	extra["route_reason"] = decision.Reason
 	extra["complexity_score"] = decision.Score
+	n.EmitAIReasoningStep(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIReasoningStep{
+		Provider:  decision.Route.Provider,
+		Model:     decision.Route.Model,
+		Endpoint:  decision.Route.Endpoint,
+		Index:     1,
+		Title:     "Routing decision",
+		Text:      fmt.Sprintf("%s (score %.2f)", decision.Reason, decision.Score),
+		Source:    "router",
+		LatencyMS: 0,
+		DeltaMS:   0,
+		Status:    status,
+	})
 	n.EmitAIModelCall(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, llm.AIModelCall{
 		Provider:           decision.Route.Provider,
 		Model:              decision.Route.Model,

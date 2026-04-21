@@ -138,3 +138,90 @@ func TestPromptVersionMetricsAggregatesByPromptHash(t *testing.T) {
 		t.Fatalf("expected earliest version v1 sha256:aaa, got %s %s", earliest.Version, earliest.PromptHash)
 	}
 }
+
+func TestReasoningTracesBuildTimelineFromRunEvents(t *testing.T) {
+	store := &RunStore{dir: filepath.Join(t.TempDir(), "runs")}
+	base := time.Date(2026, 4, 21, 10, 0, 0, 0, time.UTC)
+	run := RunRecord{
+		ID:           "run-reasoning",
+		WorkflowID:   "wf-ai",
+		WorkflowName: "AI Workflow",
+		Status:       "succeeded",
+		StartedAt:    base,
+		Events: []RunEvent{
+			{
+				Type:       "ai_reasoning_step",
+				OccurredAt: base.Add(100 * time.Millisecond),
+				NodeID:     "llm1",
+				Fields: map[string]any{
+					"node":       "llm1",
+					"provider":   "openai",
+					"model":      "gpt-5-mini",
+					"step_index": 1,
+					"title":      "Prompt submitted",
+					"text":       "Request sent.",
+					"source":     "lifecycle",
+					"latency_ms": 100,
+					"delta_ms":   100,
+					"status":     "running",
+				},
+			},
+			{
+				Type:       "ai_reasoning_step",
+				OccurredAt: base.Add(350 * time.Millisecond),
+				NodeID:     "llm1",
+				Fields: map[string]any{
+					"node":       "llm1",
+					"provider":   "openai",
+					"model":      "gpt-5-mini",
+					"step_index": 2,
+					"title":      "Reasoning summary 1",
+					"text":       "Check the input shape.",
+					"source":     "reasoning_summary",
+					"latency_ms": 350,
+					"delta_ms":   250,
+					"status":     "streamed",
+				},
+			},
+			{
+				Type:       "ai_model_call",
+				OccurredAt: base.Add(500 * time.Millisecond),
+				NodeID:     "llm1",
+				Fields: map[string]any{
+					"node":           "llm1",
+					"provider":       "openai",
+					"model":          "gpt-5-mini",
+					"prompt_preview": "Summarize this ticket",
+					"output_preview": "Done",
+					"status":         "succeeded",
+					"latency_ms":     500,
+				},
+			},
+		},
+	}
+	if err := store.Save(run); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+
+	mgr := NewInstanceManager(nil, store, nil)
+	traces := mgr.ReasoningTraces(0)
+	if len(traces) != 1 {
+		t.Fatalf("expected 1 trace, got %d", len(traces))
+	}
+	trace := traces[0]
+	if trace.ExecutionID != "run-reasoning" || trace.NodeID != "llm1" {
+		t.Fatalf("unexpected trace identity: %+v", trace)
+	}
+	if !trace.SupportsReasoning {
+		t.Fatalf("expected gpt-5-mini trace to support reasoning")
+	}
+	if trace.TotalLatencyMS != 500 {
+		t.Fatalf("expected total latency 500, got %d", trace.TotalLatencyMS)
+	}
+	if trace.StepCount != 2 || len(trace.Steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d / %d", trace.StepCount, len(trace.Steps))
+	}
+	if trace.Steps[1].Title != "Reasoning summary 1" || trace.Steps[1].DeltaMS != 250 {
+		t.Fatalf("unexpected second step: %+v", trace.Steps[1])
+	}
+}

@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type DashboardMetrics struct {
 	LastUpdated                  time.Time               `json:"last_updated"`
 	Instances                    int                     `json:"instances"`
 	PromptVersions               []PromptVersionMetric   `json:"prompt_versions"`
+	ReasoningTraces              []ReasoningTraceMetric  `json:"reasoning_traces"`
 }
 
 // TeamMemberPerformance captures lightweight per-owner metrics for display.
@@ -61,6 +63,38 @@ type PromptVersionMetric struct {
 type PromptDiffLine struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// ReasoningTraceMetric is the dashboard-friendly view of AI reasoning progress.
+type ReasoningTraceMetric struct {
+	ExecutionID       string               `json:"execution_id"`
+	WorkflowID        string               `json:"workflow_id,omitempty"`
+	WorkflowName      string               `json:"workflow_name,omitempty"`
+	WorkflowKind      string               `json:"workflow_kind,omitempty"`
+	NodeID            string               `json:"node_id,omitempty"`
+	Provider          string               `json:"provider,omitempty"`
+	Model             string               `json:"model,omitempty"`
+	Status            string               `json:"status,omitempty"`
+	StartedAt         time.Time            `json:"started_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
+	TotalLatencyMS    int64                `json:"total_latency_ms,omitempty"`
+	StepCount         int                  `json:"step_count"`
+	PromptPreview     string               `json:"prompt_preview,omitempty"`
+	OutputPreview     string               `json:"output_preview,omitempty"`
+	SupportsReasoning bool                 `json:"supports_reasoning"`
+	Live              bool                 `json:"live"`
+	Steps             []ReasoningTraceStep `json:"steps,omitempty"`
+}
+
+type ReasoningTraceStep struct {
+	Index      int       `json:"index"`
+	Title      string    `json:"title"`
+	Text       string    `json:"text,omitempty"`
+	Source     string    `json:"source,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	OccurredAt time.Time `json:"occurred_at"`
+	LatencyMS  int64     `json:"latency_ms,omitempty"`
+	DeltaMS    int64     `json:"delta_ms,omitempty"`
 }
 
 // DashboardMetrics aggregates execution data across all instances.
@@ -152,6 +186,7 @@ func (m *InstanceManager) DashboardMetrics() DashboardMetrics {
 	if m.runs != nil {
 		promptVersions, _ = m.runs.PromptVersionMetrics(12)
 	}
+	reasoningTraces := m.ReasoningTraces(16)
 
 	return DashboardMetrics{
 		WorkflowCompletionRate:       completionRate,
@@ -166,7 +201,181 @@ func (m *InstanceManager) DashboardMetrics() DashboardMetrics {
 		LastUpdated:                  time.Now(),
 		Instances:                    len(snapshots),
 		PromptVersions:               promptVersions,
+		ReasoningTraces:              reasoningTraces,
 	}
+}
+
+// ReasoningTraces combines in-flight instance events with persisted AI run events.
+func (m *InstanceManager) ReasoningTraces(limit int) []ReasoningTraceMetric {
+	traces := map[string]*ReasoningTraceMetric{}
+
+	for _, inst := range m.List() {
+		snap := inst.Snapshot()
+		if snap.Active.IsExecuting {
+			run := RunRecord{
+				ID:           snap.Active.ExecutionID,
+				WorkflowID:   inst.WorkflowID,
+				WorkflowName: inst.Name,
+				WorkflowKind: inst.Workflow.Kind,
+				Status:       "running",
+				StartedAt:    snap.Active.StartedAt,
+				Events:       snap.Active.Events,
+			}
+			collectReasoningTraces(traces, run, true)
+		}
+	}
+
+	if m.runs != nil {
+		runs, err := m.runs.List("", 40)
+		if err == nil {
+			for _, run := range runs {
+				collectReasoningTraces(traces, run, false)
+			}
+		}
+	}
+
+	out := make([]ReasoningTraceMetric, 0, len(traces))
+	for _, trace := range traces {
+		if len(trace.Steps) == 0 && (trace.PromptPreview != "" || trace.OutputPreview != "" || trace.TotalLatencyMS > 0) {
+			trace.Steps = append(trace.Steps, ReasoningTraceStep{
+				Index:      1,
+				Title:      "Model call completed",
+				Text:       trace.OutputPreview,
+				Source:     "ai_model_call",
+				Status:     trace.Status,
+				OccurredAt: trace.UpdatedAt,
+				LatencyMS:  trace.TotalLatencyMS,
+				DeltaMS:    trace.TotalLatencyMS,
+			})
+		}
+		trace.StepCount = len(trace.Steps)
+		if trace.StepCount == 0 {
+			continue
+		}
+		sort.SliceStable(trace.Steps, func(i, j int) bool {
+			if trace.Steps[i].Index == trace.Steps[j].Index {
+				return trace.Steps[i].OccurredAt.Before(trace.Steps[j].OccurredAt)
+			}
+			return trace.Steps[i].Index < trace.Steps[j].Index
+		})
+		out = append(out, *trace)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Live != out[j].Live {
+			return out[i].Live
+		}
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func collectReasoningTraces(traces map[string]*ReasoningTraceMetric, run RunRecord, live bool) {
+	for _, event := range run.Events {
+		if event.Type != "ai_reasoning_step" && event.Type != "ai_model_call" {
+			continue
+		}
+		nodeID := event.NodeID
+		if nodeID == "" {
+			nodeID = stringField(event.Fields, "node")
+		}
+		if nodeID == "" {
+			nodeID = "unknown"
+		}
+		key := run.ID + "::" + nodeID
+		trace, ok := traces[key]
+		if !ok {
+			trace = &ReasoningTraceMetric{
+				ExecutionID:  run.ID,
+				WorkflowID:   run.WorkflowID,
+				WorkflowName: run.WorkflowName,
+				WorkflowKind: string(run.WorkflowKind),
+				NodeID:       nodeID,
+				Status:       run.Status,
+				StartedAt:    run.StartedAt,
+				UpdatedAt:    run.StartedAt,
+				Live:         live,
+			}
+			traces[key] = trace
+		}
+		if trace.Status == "" {
+			trace.Status = run.Status
+		}
+		if trace.Provider == "" {
+			trace.Provider = stringField(event.Fields, "provider")
+		}
+		if trace.Model == "" {
+			trace.Model = stringField(event.Fields, "model")
+		}
+		if trace.WorkflowKind == "" {
+			trace.WorkflowKind = stringField(event.Fields, "workflow_kind")
+		}
+		if event.OccurredAt.After(trace.UpdatedAt) {
+			trace.UpdatedAt = event.OccurredAt
+		}
+		trace.SupportsReasoning = trace.SupportsReasoning || supportsReasoningTrace(trace.Provider, trace.Model)
+
+		switch event.Type {
+		case "ai_reasoning_step":
+			index := intField(event.Fields, "step_index")
+			if index == 0 {
+				index = len(trace.Steps) + 1
+			}
+			title := stringField(event.Fields, "title")
+			if title == "" {
+				title = "Reasoning step"
+			}
+			trace.Steps = append(trace.Steps, ReasoningTraceStep{
+				Index:      index,
+				Title:      title,
+				Text:       stringField(event.Fields, "text"),
+				Source:     stringField(event.Fields, "source"),
+				Status:     stringField(event.Fields, "status"),
+				OccurredAt: event.OccurredAt,
+				LatencyMS:  int64(intField(event.Fields, "latency_ms")),
+				DeltaMS:    int64(intField(event.Fields, "delta_ms")),
+			})
+		case "ai_model_call":
+			trace.PromptPreview = firstNonEmpty(trace.PromptPreview, stringField(event.Fields, "prompt_preview"))
+			trace.OutputPreview = firstNonEmpty(trace.OutputPreview, stringField(event.Fields, "output_preview"))
+			trace.TotalLatencyMS = int64(intField(event.Fields, "latency_ms"))
+			if status := stringField(event.Fields, "status"); status != "" {
+				trace.Status = status
+			}
+			if extra, ok := event.Fields["extra"].(map[string]any); ok {
+				if reason := stringField(extra, "route_reason"); reason != "" {
+					trace.Steps = append(trace.Steps, ReasoningTraceStep{
+						Index:      len(trace.Steps) + 1,
+						Title:      "Routing decision",
+						Text:       reason,
+						Source:     "router",
+						Status:     trace.Status,
+						OccurredAt: event.OccurredAt,
+					})
+				}
+			}
+		}
+	}
+}
+
+func supportsReasoningTrace(provider, modelName string) bool {
+	value := strings.ToLower(provider + " " + modelName)
+	return strings.Contains(value, "o1") ||
+		strings.Contains(value, "o3") ||
+		strings.Contains(value, "o4") ||
+		strings.Contains(value, "gpt-5") ||
+		strings.Contains(value, "deepseek") ||
+		strings.Contains(value, "reason")
+}
+
+func firstNonEmpty(current, next string) string {
+	if current != "" {
+		return current
+	}
+	return next
 }
 
 type promptVersionAggregate struct {
@@ -412,6 +621,9 @@ func stringField(fields map[string]any, key string) string {
 	case []byte:
 		return string(value)
 	default:
+		if value != nil {
+			return fmt.Sprint(value)
+		}
 		return ""
 	}
 }

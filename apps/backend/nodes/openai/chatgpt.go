@@ -23,6 +23,12 @@ type tokenUsage struct {
 	Total  int
 }
 
+type generationResult struct {
+	Output    string
+	Usage     tokenUsage
+	Reasoning []llm.AIReasoningStep
+}
+
 type ChatGPTNode struct {
 	llm.LLMNodeBase
 	cfg    llm.LLMConfig
@@ -94,34 +100,65 @@ func (n *ChatGPTNode) Process(ctx context.Context, wf model.Workflow, node model
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+n.apiKey)
 		start := time.Now()
+		n.emitReasoningStep(ctx, wf, node, llm.AIReasoningStep{
+			Provider:  "openai",
+			Model:     n.cfg.Model,
+			Endpoint:  n.cfg.Endpoint,
+			Index:     1,
+			Title:     "Prompt submitted",
+			Text:      "Request sent to the model endpoint.",
+			Source:    "lifecycle",
+			LatencyMS: 0,
+			DeltaMS:   0,
+			Status:    "running",
+		})
 		resp, err := client.Do(req)
 		if err != nil {
+			n.emitReasoningStep(ctx, wf, node, failureReasoningStep("openai", n.cfg.Model, n.cfg.Endpoint, time.Since(start), err))
 			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), err)
 			return nil, err
 		}
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
+			n.emitReasoningStep(ctx, wf, node, failureReasoningStep("openai", n.cfg.Model, n.cfg.Endpoint, time.Since(start), readErr))
 			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), readErr)
 			return nil, readErr
 		}
 		if resp.StatusCode != http.StatusOK {
 			err := fmt.Errorf("openai error: status %s body=%s", resp.Status, strings.TrimSpace(string(body)))
+			n.emitReasoningStep(ctx, wf, node, failureReasoningStep("openai", n.cfg.Model, n.cfg.Endpoint, time.Since(start), err))
 			n.emitCall(ctx, wf, node, prompt, "", tokenUsage{}, time.Since(start), err)
 			return nil, err
 		}
 
-		content, usage, err := n.extractOutputWithUsage(n.cfg.Endpoint, body)
+		result, err := n.extractGenerationResult(n.cfg.Endpoint, body)
+		elapsed := time.Since(start)
 		if err != nil {
-			n.emitCall(ctx, wf, node, prompt, "", usage, time.Since(start), err)
+			n.emitReasoningStep(ctx, wf, node, failureReasoningStep("openai", n.cfg.Model, n.cfg.Endpoint, elapsed, err))
+			n.emitCall(ctx, wf, node, prompt, "", result.Usage, elapsed, err)
 			return nil, err
 		}
-		n.emitCall(ctx, wf, node, prompt, content, usage, time.Since(start), nil)
-		llm.StoreSemanticCache("openai", n.cfg.Model, string(node.ID), prompt, content, cacheOpts)
+		result.Reasoning = withReasoningTiming(result.Reasoning, elapsed)
+		n.emitReasoningSteps(ctx, wf, node, result.Reasoning)
+		n.emitReasoningStep(ctx, wf, node, llm.AIReasoningStep{
+			Provider:  "openai",
+			Model:     n.cfg.Model,
+			Endpoint:  n.cfg.Endpoint,
+			Index:     len(result.Reasoning) + 2,
+			Title:     "Response completed",
+			Text:      "Model response received and parsed.",
+			Source:    "lifecycle",
+			LatencyMS: elapsed.Milliseconds(),
+			DeltaMS:   elapsed.Milliseconds(),
+			Status:    "succeeded",
+		})
+		n.emitCall(ctx, wf, node, prompt, result.Output, result.Usage, elapsed, nil)
+		llm.StoreSemanticCache("openai", n.cfg.Model, string(node.ID), prompt, result.Output, cacheOpts)
 
 		out = append(out, model.Item{
 			"prompt":  prompt,
-			"output":  content,
+			"output":  result.Output,
 			"model":   n.cfg.Model,
 			"node_id": node.ID,
 		})
@@ -168,6 +205,14 @@ func (n *ChatGPTNode) emitCall(ctx context.Context, wf model.Workflow, node mode
 		Error:              errText,
 		HumanReview:        humanReview,
 	})
+}
+
+func (n *ChatGPTNode) emitReasoningStep(ctx context.Context, wf model.Workflow, node model.Node, step llm.AIReasoningStep) {
+	n.EmitAIReasoningStep(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, step)
+}
+
+func (n *ChatGPTNode) emitReasoningSteps(ctx context.Context, wf model.Workflow, node model.Node, steps []llm.AIReasoningStep) {
+	n.EmitAIReasoningSteps(ctx, plugin.ExecutionIDFromContext(ctx), wf, node, steps)
 }
 
 func (n *ChatGPTNode) emitCachedCall(ctx context.Context, wf model.Workflow, node model.Node, prompt, output string, hit llm.SemanticCacheHit) {
@@ -231,11 +276,17 @@ func (n *ChatGPTNode) extractOutput(endpoint string, body []byte) (string, error
 }
 
 func (n *ChatGPTNode) extractOutputWithUsage(endpoint string, body []byte) (string, tokenUsage, error) {
+	result, err := n.extractGenerationResult(endpoint, body)
+	return result.Output, result.Usage, err
+}
+
+func (n *ChatGPTNode) extractGenerationResult(endpoint string, body []byte) (generationResult, error) {
 	if strings.Contains(endpoint, "/chat/completions") {
 		var parsed struct {
 			Choices []struct {
 				Message struct {
-					Content string `json:"content"`
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
 				} `json:"message"`
 			} `json:"choices"`
 			Usage struct {
@@ -245,7 +296,7 @@ func (n *ChatGPTNode) extractOutputWithUsage(endpoint string, body []byte) (stri
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(body, &parsed); err != nil {
-			return "", tokenUsage{}, err
+			return generationResult{}, err
 		}
 		usage := tokenUsage{
 			Input:  parsed.Usage.PromptTokens,
@@ -253,14 +304,21 @@ func (n *ChatGPTNode) extractOutputWithUsage(endpoint string, body []byte) (stri
 			Total:  parsed.Usage.TotalTokens,
 		}
 		if len(parsed.Choices) == 0 {
-			return "", usage, nil
+			return generationResult{Usage: usage}, nil
 		}
-		return parsed.Choices[0].Message.Content, usage, nil
+		message := parsed.Choices[0].Message
+		reasoning := llm.ReasoningStepsFromText("openai", n.cfg.Model, n.cfg.Endpoint, "reasoning_content", "Reasoning", message.ReasoningContent, 2, 0)
+		return generationResult{Output: message.Content, Usage: usage, Reasoning: reasoning}, nil
 	}
 
 	var parsed struct {
 		OutputText string `json:"output_text"`
 		Output     []struct {
+			Type    string `json:"type"`
+			Text    string `json:"text"`
+			Summary []struct {
+				Text string `json:"text"`
+			} `json:"summary"`
 			Content []struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
@@ -273,24 +331,75 @@ func (n *ChatGPTNode) extractOutputWithUsage(endpoint string, body []byte) (stri
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", tokenUsage{}, err
+		return generationResult{}, err
 	}
 	usage := tokenUsage{
 		Input:  parsed.Usage.InputTokens,
 		Output: parsed.Usage.OutputTokens,
 		Total:  parsed.Usage.TotalTokens,
 	}
+	reasoningTexts := make([]string, 0)
+	for _, output := range parsed.Output {
+		if output.Type != "reasoning" {
+			continue
+		}
+		if strings.TrimSpace(output.Text) != "" {
+			reasoningTexts = append(reasoningTexts, output.Text)
+		}
+		for _, summary := range output.Summary {
+			if strings.TrimSpace(summary.Text) != "" {
+				reasoningTexts = append(reasoningTexts, summary.Text)
+			}
+		}
+		for _, content := range output.Content {
+			if strings.TrimSpace(content.Text) != "" {
+				reasoningTexts = append(reasoningTexts, content.Text)
+			}
+		}
+	}
+	reasoning := llm.ReasoningStepsFromText("openai", n.cfg.Model, n.cfg.Endpoint, "reasoning_summary", "Reasoning summary", strings.Join(reasoningTexts, "\n\n"), 2, 0)
 	if parsed.OutputText != "" {
-		return parsed.OutputText, usage, nil
+		return generationResult{Output: parsed.OutputText, Usage: usage, Reasoning: reasoning}, nil
 	}
 	for _, output := range parsed.Output {
 		for _, content := range output.Content {
 			if content.Type == "output_text" || content.Type == "text" {
-				return content.Text, usage, nil
+				return generationResult{Output: content.Text, Usage: usage, Reasoning: reasoning}, nil
 			}
 		}
 	}
-	return "", usage, nil
+	return generationResult{Usage: usage, Reasoning: reasoning}, nil
+}
+
+func failureReasoningStep(provider, model, endpoint string, latency time.Duration, err error) llm.AIReasoningStep {
+	return llm.AIReasoningStep{
+		Provider:  provider,
+		Model:     model,
+		Endpoint:  endpoint,
+		Index:     2,
+		Title:     "Request failed",
+		Text:      err.Error(),
+		Source:    "lifecycle",
+		LatencyMS: latency.Milliseconds(),
+		DeltaMS:   latency.Milliseconds(),
+		Status:    "failed",
+	}
+}
+
+func withReasoningTiming(steps []llm.AIReasoningStep, totalLatency time.Duration) []llm.AIReasoningStep {
+	if len(steps) == 0 || totalLatency <= 0 {
+		return steps
+	}
+	totalMS := totalLatency.Milliseconds()
+	out := append([]llm.AIReasoningStep(nil), steps...)
+	var prev int64
+	for idx := range out {
+		latencyMS := int64(float64(totalMS) * (float64(idx+1) / float64(len(out)+1)))
+		out[idx].LatencyMS = latencyMS
+		out[idx].DeltaMS = latencyMS - prev
+		prev = latencyMS
+	}
+	return out
 }
 
 func intFromAny(v any) (int, bool) {
