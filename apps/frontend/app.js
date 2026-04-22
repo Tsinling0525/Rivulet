@@ -782,6 +782,12 @@ function ResearchPage({ workflows, runs, openRun }) {
   const [paperTrace, setPaperTrace] = useState([]);
   const [paperStartedAt, setPaperStartedAt] = useState(null);
   const [paperElapsed, setPaperElapsed] = useState(0);
+  const [selectedPaperID, setSelectedPaperID] = useState("");
+  const [savedPaperIDs, setSavedPaperIDs] = useState([]);
+  const [paperNotes, setPaperNotes] = useState({});
+  const [paperDetailSummaries, setPaperDetailSummaries] = useState({});
+  const [detailRegenerating, setDetailRegenerating] = useState(false);
+  const [detailNotice, setDetailNotice] = useState("");
 
   useEffect(() => {
     if (!paperLoading || !paperStartedAt) return undefined;
@@ -795,6 +801,8 @@ function ResearchPage({ workflows, runs, openRun }) {
     setPaperLoading(true);
     setPaperError("");
     setPaperResult(null);
+    setSelectedPaperID("");
+    setDetailNotice("");
     setPaperStartedAt(Date.now());
     setPaperElapsed(0);
     setPaperTrace([
@@ -845,6 +853,98 @@ function ResearchPage({ workflows, runs, openRun }) {
     }
   }
 
+  function openPaperDetail(paper) {
+    setSelectedPaperID(paperKey(paper));
+    setDetailNotice("");
+    const routeID = encodeURIComponent(paperKey(paper));
+    if (window.location.hash !== `#/research/paper/${routeID}`) {
+      window.location.hash = `#/research/paper/${routeID}`;
+    }
+  }
+
+  function backToResearchResults() {
+    setSelectedPaperID("");
+    setDetailNotice("");
+    if (window.location.hash !== "#/research") {
+      window.location.hash = "#/research";
+    }
+  }
+
+  function toggleSavedPaper(paper) {
+    const id = paperKey(paper);
+    setSavedPaperIDs((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function updatePaperNote(paper, value) {
+    const id = paperKey(paper);
+    setPaperNotes((current) => ({ ...current, [id]: value }));
+  }
+
+  async function regeneratePaperSummary(paper) {
+    if (!paper) return;
+    setDetailRegenerating(true);
+    setDetailNotice("");
+    try {
+      const summaryResult = await fetchData("/research/summarize-papers", {
+        method: "POST",
+        body: JSON.stringify({
+          query: paper.title || paperQuery,
+          model: paperResult?.model || "gemma4:e2b",
+          papers: [paper],
+        }),
+      });
+      const id = paperKey(paper);
+      setPaperDetailSummaries((current) => ({ ...current, [id]: summaryResult.summary || "" }));
+      const summaryTrace = normalizeResearchTrace(summaryResult.trace);
+      if (summaryTrace.length > 0) {
+        setPaperTrace((current) => [...current, ...summaryTrace]);
+      }
+      setDetailNotice("Summary regenerated for this paper.");
+    } catch (error) {
+      setDetailNotice(error.message || "Summary regeneration failed.");
+    } finally {
+      setDetailRegenerating(false);
+    }
+  }
+
+  function findRelatedPapers(paper) {
+    const query = relatedPaperQuery(paper);
+    setPaperQuery(query);
+    setPaperLimit(5);
+    setSelectedPaperID("");
+    setDetailNotice("Search query updated for related work.");
+    if (window.location.hash !== "#/research") {
+      window.location.hash = "#/research";
+    }
+  }
+
+  const selectedPaper = selectedPaperID
+    ? paperResult?.papers?.find((paper) => paperKey(paper) === selectedPaperID)
+    : null;
+
+  if (selectedPaper) {
+    const selectedID = paperKey(selectedPaper);
+    return h(PaperDetailView, {
+      paper: selectedPaper,
+      query: paperResult?.query || paperQuery,
+      model: paperResult?.model || "gemma4:e2b",
+      generatedAt: paperResult?.generated_at,
+      trace: paperTrace,
+      note: paperNotes[selectedID] || "",
+      saved: savedPaperIDs.includes(selectedID),
+      summary: paperDetailSummaries[selectedID] || "",
+      regenerating: detailRegenerating,
+      notice: detailNotice,
+      onBack: backToResearchResults,
+      onSave: () => toggleSavedPaper(selectedPaper),
+      onNoteChange: (value) => updatePaperNote(selectedPaper, value),
+      onRegenerate: () => regeneratePaperSummary(selectedPaper),
+      onFindRelated: () => findRelatedPapers(selectedPaper),
+      onCompare: () => setDetailNotice("Compare picker is queued for the next workflow surface."),
+      onAddToWorkflow: () => setDetailNotice("Paper added to the active Paper Search + Summary workspace context."),
+    });
+  }
+
   return h(
     React.Fragment,
     null,
@@ -863,7 +963,8 @@ function ResearchPage({ workflows, runs, openRun }) {
         ["Needs review", "1"],
       ],
     }),
-    h(AgenticPaperSearchPanel, { query: paperQuery, setQuery: setPaperQuery, limit: paperLimit, setLimit: setPaperLimit, result: paperResult, error: paperError, loading: paperLoading, trace: paperTrace, elapsed: paperElapsed, runSearch: runPaperSearch }),
+    detailNotice ? h("div", { className: "loading-strip" }, detailNotice) : null,
+    h(AgenticPaperSearchPanel, { query: paperQuery, setQuery: setPaperQuery, limit: paperLimit, setLimit: setPaperLimit, result: paperResult, error: paperError, loading: paperLoading, trace: paperTrace, elapsed: paperElapsed, runSearch: runPaperSearch, openPaper: openPaperDetail }),
     h(WorkspacePage, { workflow, runs, openRun, taskMode: true }),
   );
 }
@@ -884,7 +985,7 @@ function failRunningResearchTrace(trace, detail) {
   return trace.map((step) => step.status === "running" ? { ...step, status: "failed", detail } : step);
 }
 
-function AgenticPaperSearchPanel({ query, setQuery, limit, setLimit, result, error, loading, trace, elapsed, runSearch }) {
+function AgenticPaperSearchPanel({ query, setQuery, limit, setLimit, result, error, loading, trace, elapsed, runSearch, openPaper }) {
   return h(
     "section",
     { className: "panel" },
@@ -918,10 +1019,221 @@ function AgenticPaperSearchPanel({ query, setQuery, limit, setLimit, result, err
                 h("div", { className: "paper-title-row" }, h("h3", null, paper.title), paper.link ? h("a", { className: "paper-link", href: paper.link, target: "_blank", rel: "noreferrer" }, "arXiv") : null),
                 h("p", { className: "subtle" }, [paper.published, paper.authors?.slice(0, 3).join(", ")].filter(Boolean).join(" - ")),
                 h("p", { className: "subtle" }, paper.summary),
+                h(
+                  "div",
+                  { className: "button-row" },
+                  h("button", { className: "button primary", onClick: () => openPaper(paper) }, "View Details"),
+                  paper.link ? h("a", { className: "button", href: paper.link, target: "_blank", rel: "noreferrer" }, "Open Source") : null,
+                ),
               ),
             ),
           )
         : null,
+    ),
+  );
+}
+
+function PaperDetailView({ paper, query, model, generatedAt, trace, note, saved, summary, regenerating, notice, onBack, onSave, onNoteChange, onRegenerate, onFindRelated, onCompare, onAddToWorkflow }) {
+  const detail = useMemo(() => derivePaperDetail(paper, summary), [paper, summary]);
+  const citation = buildPaperCitation(paper);
+  const bibtex = buildBibtexCitation(paper);
+
+  async function copyText(value, label) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (_error) {
+      window.prompt(`Copy ${label}`, value);
+    }
+  }
+
+  return h(
+    "section",
+    { className: "paper-detail-shell" },
+    h(
+      "div",
+      { className: "paper-detail-topline" },
+      h("button", { className: "button ghost", onClick: onBack }, "Back to results"),
+      h(Badge, { tone: detail.summaryStatusTone }, detail.summaryStatus),
+    ),
+    notice ? h("div", { className: "loading-strip" }, notice) : null,
+    h(
+      "header",
+      { className: "panel paper-detail-header" },
+      h(
+        "div",
+        { className: "paper-detail-identity" },
+        h("p", { className: "eyebrow" }, "Paper Detail"),
+        h("h1", null, paper.title || "Untitled paper"),
+        h("p", { className: "subtle" }, paperByline(paper)),
+        h(
+          "div",
+          { className: "badge-row" },
+          h(Badge, { tone: "blue" }, paperSource(paper)),
+          paperYear(paper) ? h(Badge, { tone: "gray" }, paperYear(paper)) : null,
+          detail.tags.map((tag) => h(Badge, { tone: "gray", key: tag }, tag)),
+        ),
+      ),
+      h(
+        "div",
+        { className: "paper-detail-actions" },
+        h("button", { className: `button ${saved ? "" : "primary"}`, onClick: onSave }, saved ? "Saved" : "Save"),
+        h("button", { className: "button", onClick: () => copyText(citation, "citation") }, "Copy Citation"),
+        paper.link ? h("a", { className: "button", href: paper.link, target: "_blank", rel: "noreferrer" }, "Open Source") : null,
+      ),
+    ),
+    h(
+      "section",
+      { className: "panel paper-tldr-panel" },
+      h("div", { className: "panel-header" }, h("h2", null, "TL;DR"), regenerating ? h(Badge, { tone: "blue" }, "regenerating") : h(Badge, { tone: detail.summaryStatusTone }, detail.summaryStatus)),
+      h(
+        "div",
+        { className: "panel-body" },
+        detail.tldr
+          ? h("p", { className: "paper-tldr-text" }, detail.tldr)
+          : h(EmptyState, { title: "No summary generated yet", body: "Generate a summary to create a concise top-level read of this paper." }),
+      ),
+    ),
+    h(
+      "div",
+      { className: "paper-detail-grid" },
+      h(
+        "main",
+        { className: "paper-detail-main workspace-stack" },
+        h(StructuredBreakdown, { detail }),
+        h(EvidenceGroundingPanel, { evidence: detail.evidence, hasSource: Boolean(paper.summary) }),
+        h(PaperSecondarySections, { paper, detail, bibtex, trace, model, query }),
+      ),
+      h(
+        "aside",
+        { className: "paper-detail-side workspace-stack" },
+        h(PaperMetadataPanel, { paper, model, generatedAt, query }),
+        h(UserNotesPanel, { note, onChange: onNoteChange }),
+        h(NextActionsPanel, { regenerating, onRegenerate, onFindRelated, onCompare, onAddToWorkflow }),
+      ),
+    ),
+  );
+}
+
+function StructuredBreakdown({ detail }) {
+  const items = [
+    ["Problem", detail.problem],
+    ["Method", detail.method],
+    ["Key idea", detail.keyIdea],
+    ["Main contribution", detail.mainContribution],
+    ["Limitations", detail.limitations],
+  ];
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Structured Breakdown"), h(Badge, { tone: "gray" }, "extracted")),
+    h(
+      "div",
+      { className: "panel-body structured-breakdown" },
+      items.map(([label, value]) =>
+        h(
+          "div",
+          { className: "breakdown-item", key: label },
+          h("h3", null, label),
+          value ? h("p", { className: "subtle" }, value) : h("p", { className: "subtle" }, "Not extracted from available paper data."),
+        ),
+      ),
+    ),
+  );
+}
+
+function EvidenceGroundingPanel({ evidence, hasSource }) {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Evidence / Grounding"), h(Badge, { tone: hasSource ? "green" : "amber" }, hasSource ? `${evidence.length} claims` : "missing source")),
+    h(
+      "div",
+      { className: "panel-body evidence-list" },
+      !hasSource
+        ? h(EmptyState, { title: "Evidence unavailable", body: "The source abstract or text is missing, so extracted claims cannot be grounded yet." })
+        : evidence.map((item, index) =>
+            h(
+              "article",
+              { className: "evidence-item", key: `${item.label}-${index}` },
+              h("div", { className: "evidence-claim-row" }, h("strong", null, item.label), h(Badge, { tone: item.confidenceTone }, item.confidence)),
+              h("p", null, item.claim),
+              h(
+                "div",
+                { className: "evidence-snippet" },
+                h("span", { className: "mono subtle" }, item.location),
+                h("blockquote", null, item.snippet),
+              ),
+              h("div", { className: "button-row" }, h("button", { className: "button" }, "View Context"), h("button", { className: "button" }, "Link Claim")),
+            ),
+          ),
+      hasSource && evidence.length === 0
+        ? h(EmptyState, { title: "No claim evidence extracted", body: "Run grounding after full source text is available." })
+        : null,
+    ),
+  );
+}
+
+function PaperSecondarySections({ paper, detail, bibtex, trace, model, query }) {
+  return h(
+    "div",
+    { className: "workspace-stack" },
+    h(DisclosurePanel, { title: "Abstract", meta: h(Badge, { tone: paper.summary ? "green" : "gray" }, paper.summary ? "available" : "missing"), defaultOpen: false }, paper.summary ? h("p", { className: "subtle" }, paper.summary) : h(EmptyState, { title: "No abstract", body: "The selected result did not include an abstract." })),
+    h(DisclosurePanel, { title: "BibTeX", meta: h(Badge, { tone: "gray" }, "citation"), defaultOpen: false }, h("pre", { className: "artifact-preview mono" }, bibtex)),
+    h(DisclosurePanel, { title: "Raw Extraction", meta: h(Badge, { tone: "gray" }, "debug"), defaultOpen: false }, h("pre", { className: "json-preview" }, JSON.stringify({ paper, extraction: detail, model, query }, null, 2))),
+    h(DisclosurePanel, { title: "Trace", meta: h(Badge, { tone: trace?.length ? "green" : "gray" }, `${trace?.length || 0} steps`), defaultOpen: false }, trace?.length ? h(ResearchTracePanel, { trace, loading: false, elapsed: 0 }) : h(EmptyState, { title: "No trace attached", body: "Run search or regenerate summary to attach toolchain steps." })),
+  );
+}
+
+function PaperMetadataPanel({ paper, model, generatedAt, query }) {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Paper Metadata")),
+    h(
+      "div",
+      { className: "panel-body meta-list" },
+      h("div", { className: "meta-row" }, h("span", null, "Source"), h("strong", null, paperSource(paper))),
+      h("div", { className: "meta-row" }, h("span", null, "Year"), h("strong", null, paperYear(paper) || "Unknown")),
+      h("div", { className: "meta-row" }, h("span", null, "Authors"), h("strong", null, paper.authors?.length || 0)),
+      h("div", { className: "meta-row" }, h("span", null, "Model"), h("strong", null, model || "Not recorded")),
+      h("div", { className: "meta-row" }, h("span", null, "Generated"), h("strong", null, generatedAt ? formatDate(generatedAt) : "Not generated")),
+      h("div", { className: "meta-row" }, h("span", null, "Query"), h("strong", null, query || "Not recorded")),
+      paper.id ? h("div", { className: "meta-row" }, h("span", null, "ID"), h("strong", { className: "mono" }, compactPaperID(paper.id))) : null,
+    ),
+  );
+}
+
+function UserNotesPanel({ note, onChange }) {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Notes"), h(Badge, { tone: note ? "green" : "gray" }, note ? "saved locally" : "empty")),
+    h(
+      "div",
+      { className: "panel-body workspace-stack" },
+      h("textarea", {
+        className: "textarea paper-notes",
+        value: note,
+        onChange: (event) => onChange(event.target.value),
+        placeholder: "Add your reading notes, questions, or follow-up ideas.",
+      }),
+      h("p", { className: "subtle" }, "Notes are attached to this paper in the current workspace session."),
+    ),
+  );
+}
+
+function NextActionsPanel({ regenerating, onRegenerate, onFindRelated, onCompare, onAddToWorkflow }) {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Next Actions")),
+    h(
+      "div",
+      { className: "panel-body action-list" },
+      h("button", { className: "button primary", onClick: onCompare }, "Compare with Paper"),
+      h("button", { className: "button", onClick: onFindRelated }, "Find Related Work"),
+      h("button", { className: "button", onClick: onAddToWorkflow }, "Add to Workflow"),
+      h("button", { className: "button", onClick: onRegenerate, disabled: regenerating }, regenerating ? "Regenerating..." : "Regenerate Summary"),
     ),
   );
 }
@@ -1009,6 +1321,171 @@ function traceMetadata(metadata) {
   if (metadata.prompt_eval_count) parts.push(`${metadata.prompt_eval_count} prompt tokens`);
   if (metadata.eval_count) parts.push(`${metadata.eval_count} output tokens`);
   return parts.join(" - ");
+}
+
+function paperKey(paper) {
+  return paper?.id || slugify(paper?.title || "paper");
+}
+
+function paperSource(paper) {
+  const id = String(paper?.id || paper?.link || "").toLowerCase();
+  if (id.includes("arxiv.org")) return "arXiv";
+  if (id.includes("doi.org")) return "DOI";
+  return "External";
+}
+
+function paperYear(paper) {
+  const value = paper?.published || "";
+  const match = String(value).match(/\d{4}/);
+  return match ? match[0] : "";
+}
+
+function paperByline(paper) {
+  const authors = Array.isArray(paper?.authors) ? paper.authors : [];
+  const shownAuthors = authors.slice(0, 5).join(", ");
+  const authorText = authors.length > 5 ? `${shownAuthors}, +${authors.length - 5} more` : shownAuthors;
+  return [authorText || "Unknown authors", paperYear(paper), paperSource(paper)].filter(Boolean).join(" - ");
+}
+
+function compactPaperID(value) {
+  const text = String(value || "");
+  return text.replace(/^https?:\/\/(www\.)?/, "").replace(/^arxiv.org\/abs\//, "");
+}
+
+function splitSentences(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ");
+  return (normalized.match(/[^.!?]+[.!?]?/g) || [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function firstMatchingSentence(sentences, patterns, fallbackIndex = 0) {
+  const found = sentences.find((sentence) => patterns.some((pattern) => pattern.test(sentence)));
+  return found || sentences[fallbackIndex] || "";
+}
+
+function truncateText(text, maxLength = 420) {
+  const value = String(text || "").trim();
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trim()}...`;
+}
+
+function stripMarkdown(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`[\]()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function derivePaperTags(paper) {
+  const text = `${paper?.title || ""} ${paper?.summary || ""}`.toLowerCase();
+  const tags = [];
+  const candidates = [
+    ["LLM", /\b(llm|large language model|language model)\b/],
+    ["Agents", /\b(agent|agents|agentic|autonomous)\b/],
+    ["Benchmark", /\bbenchmark|evaluation|dataset\b/],
+    ["Planning", /\bplanning|planner|reasoning\b/],
+    ["Code", /\bcode|coding|software|programming\b/],
+    ["Retrieval", /\bretrieval|rag|search\b/],
+    ["Multi-agent", /\bmulti-agent|multiagent\b/],
+    ["Robotics", /\brobot|robotics\b/],
+  ];
+  candidates.forEach(([label, pattern]) => {
+    if (pattern.test(text)) tags.push(label);
+  });
+  return tags.slice(0, 4);
+}
+
+function derivePaperDetail(paper, generatedSummary) {
+  const sentences = splitSentences(paper?.summary);
+  const generated = stripMarkdown(generatedSummary);
+  const tldrSource = generated || sentences.slice(0, 2).join(" ");
+  const problem = firstMatchingSentence(sentences, [/problem/i, /challenge/i, /address/i, /study/i, /investigate/i], 0);
+  const method = firstMatchingSentence(sentences, [/propose/i, /introduce/i, /method/i, /approach/i, /framework/i, /model/i], 1);
+  const keyIdea = firstMatchingSentence(sentences, [/key/i, /idea/i, /combine/i, /use/i, /enable/i], 2);
+  const mainContribution = firstMatchingSentence(sentences, [/show/i, /demonstrate/i, /result/i, /contribution/i, /improve/i, /achieve/i, /outperform/i], Math.min(3, sentences.length - 1));
+  const limitations = firstMatchingSentence(sentences, [/limit/i, /future/i, /however/i, /although/i, /despite/i], -1) || "";
+  const fields = [
+    ["Problem", problem],
+    ["Method", method],
+    ["Key idea", keyIdea],
+    ["Main contribution", mainContribution],
+    ["Limitations", limitations],
+  ];
+
+  return {
+    tldr: truncateText(tldrSource, generated ? 520 : 360),
+    summaryStatus: generated ? "Generated" : paper?.summary ? "Abstract derived" : "Missing summary",
+    summaryStatusTone: generated || paper?.summary ? "green" : "amber",
+    problem,
+    method,
+    keyIdea,
+    mainContribution,
+    limitations,
+    tags: derivePaperTags(paper),
+    evidence: fields
+      .filter(([_label, claim]) => claim)
+      .map(([label, claim], index) => ({
+        label,
+        claim,
+        snippet: evidenceSnippetForClaim(paper?.summary, claim),
+        location: `Abstract snippet ${index + 1}`,
+        confidence: label === "Limitations" ? "medium" : "high",
+        confidenceTone: label === "Limitations" ? "amber" : "green",
+      })),
+  };
+}
+
+function evidenceSnippetForClaim(source, claim) {
+  const sentences = splitSentences(source);
+  if (sentences.length === 0) return "";
+  const claimWords = new Set(String(claim || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4));
+  let best = sentences[0];
+  let bestScore = -1;
+  sentences.forEach((sentence) => {
+    const words = String(sentence).toLowerCase().split(/[^a-z0-9]+/);
+    const score = words.reduce((count, word) => count + (claimWords.has(word) ? 1 : 0), 0);
+    if (score > bestScore) {
+      best = sentence;
+      bestScore = score;
+    }
+  });
+  return truncateText(best, 340);
+}
+
+function relatedPaperQuery(paper) {
+  const tags = derivePaperTags(paper);
+  const titleTerms = String(paper?.title || "")
+    .split(/\s+/)
+    .filter((word) => word.length > 4)
+    .slice(0, 7)
+    .join(" ");
+  return [titleTerms, tags.join(" ")].filter(Boolean).join(" ");
+}
+
+function buildPaperCitation(paper) {
+  const authors = Array.isArray(paper?.authors) && paper.authors.length > 0 ? paper.authors.join(", ") : "Unknown authors";
+  const year = paperYear(paper) || "n.d.";
+  const title = paper?.title || "Untitled paper";
+  const source = paperSource(paper);
+  const link = paper?.link || paper?.id || "";
+  return `${authors} (${year}). ${title}. ${source}. ${link}`.trim();
+}
+
+function buildBibtexCitation(paper) {
+  const authors = Array.isArray(paper?.authors) && paper.authors.length > 0 ? paper.authors.join(" and ") : "Unknown";
+  const year = paperYear(paper) || "0000";
+  const firstAuthor = Array.isArray(paper?.authors) && paper.authors[0] ? paper.authors[0].split(/\s+/).slice(-1)[0] : "paper";
+  const key = `${slugify(firstAuthor)}${year}${slugify(String(paper?.title || "").split(/\s+/).slice(0, 2).join("-"))}`;
+  return [
+    `@article{${key},`,
+    `  title = {${paper?.title || "Untitled paper"}},`,
+    `  author = {${authors}},`,
+    `  year = {${year}},`,
+    `  url = {${paper?.link || paper?.id || ""}},`,
+    `}`,
+  ].join("\n");
 }
 
 function CreatePage({ workflows, runs, openRun }) {

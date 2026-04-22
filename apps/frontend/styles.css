@@ -956,6 +956,133 @@ button.asset-card {
   text-decoration: underline;
 }
 
+.paper-detail-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.paper-detail-topline {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.paper-detail-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 18px;
+}
+
+.paper-detail-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-width: 960px;
+  min-width: 0;
+}
+
+.paper-detail-actions {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.paper-tldr-panel .panel-body {
+  padding: 16px 18px;
+}
+
+.paper-tldr-text {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 980px;
+}
+
+.paper-detail-grid {
+  align-items: start;
+  display: grid;
+  gap: 13px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+.paper-detail-main,
+.paper-detail-side {
+  min-width: 0;
+}
+
+.structured-breakdown {
+  display: grid;
+  gap: 10px;
+}
+
+.breakdown-item {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 10px;
+}
+
+.evidence-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+}
+
+.evidence-claim-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.evidence-snippet {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.evidence-snippet blockquote {
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted-strong);
+  line-height: 1.55;
+  margin: 0;
+  padding-left: 10px;
+}
+
+.paper-notes {
+  min-height: 170px;
+}
+
+.action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.action-list .button {
+  justify-content: center;
+  width: 100%;
+}
+
 .interaction-grid {
   display: grid;
   gap: 11px;
@@ -1082,6 +1209,7 @@ button.asset-card {
   .workspace,
   .split,
   .two-column,
+  .paper-detail-grid,
   .storyboard {
     grid-template-columns: 1fr;
   }
@@ -1120,6 +1248,16 @@ button.asset-card {
   .page-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .paper-detail-header,
+  .paper-detail-topline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paper-detail-actions {
+    justify-content: flex-start;
   }
 
   .metrics-grid,
