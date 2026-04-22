@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+import { marked } from "https://esm.sh/marked@12.0.2";
+import DOMPurify from "https://esm.sh/dompurify@3.1.6";
 
 const h = React.createElement;
 
@@ -772,6 +774,76 @@ function DomainSummary({ items }) {
 
 function ResearchPage({ workflows, runs, openRun }) {
   const workflow = workflowByType(workflows, "paper") || workflows.find((item) => item.id === "paper-search") || sampleWorkflows[0];
+  const [paperQuery, setPaperQuery] = useState("agentic AI agents machine learning");
+  const [paperLimit, setPaperLimit] = useState(1);
+  const [paperResult, setPaperResult] = useState(null);
+  const [paperError, setPaperError] = useState("");
+  const [paperLoading, setPaperLoading] = useState(false);
+  const [paperTrace, setPaperTrace] = useState([]);
+  const [paperStartedAt, setPaperStartedAt] = useState(null);
+  const [paperElapsed, setPaperElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!paperLoading || !paperStartedAt) return undefined;
+    const timer = window.setInterval(() => {
+      setPaperElapsed(Math.floor((Date.now() - paperStartedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [paperLoading, paperStartedAt]);
+
+  async function runPaperSearch() {
+    setPaperLoading(true);
+    setPaperError("");
+    setPaperResult(null);
+    setPaperStartedAt(Date.now());
+    setPaperElapsed(0);
+    setPaperTrace([
+      runningResearchTrace("arxiv_search", "arXiv API", "Searching titles and abstracts"),
+      pendingResearchTrace("gemma_summary", "Ollama Gemma4", "Waiting for retrieved papers"),
+    ]);
+    try {
+      const searchResult = await fetchData("/research/arxiv-papers", {
+        method: "POST",
+        body: JSON.stringify({
+          query: paperQuery,
+          limit: Number(paperLimit) || 1,
+        }),
+      });
+      const searchTrace = normalizeResearchTrace(searchResult.trace);
+      setPaperTrace([
+        ...searchTrace,
+        runningResearchTrace("gemma_summary", "Ollama Gemma4", "Summarizing retrieved papers"),
+      ]);
+      setPaperResult({ ...searchResult, summary: "" });
+
+      if (!searchResult.papers?.length) {
+        setPaperTrace(searchTrace);
+        setPaperResult({
+          ...searchResult,
+          summary: "没有在 arXiv 检索到匹配论文。可以尝试放宽关键词，例如 language agents 或 autonomous agents。",
+        });
+        return;
+      }
+
+      const summaryResult = await fetchData("/research/summarize-papers", {
+        method: "POST",
+        body: JSON.stringify({
+          query: searchResult.query || paperQuery,
+          model: searchResult.model || "gemma4:e2b",
+          papers: searchResult.papers,
+        }),
+      });
+      const summaryTrace = normalizeResearchTrace(summaryResult.trace);
+      const nextTrace = [...searchTrace, ...summaryTrace];
+      setPaperTrace(nextTrace);
+      setPaperResult({ ...searchResult, ...summaryResult, trace: nextTrace });
+    } catch (error) {
+      setPaperError(error.message || "Paper search failed");
+      setPaperTrace((current) => failRunningResearchTrace(current, error.message || "Paper search failed"));
+    } finally {
+      setPaperLoading(false);
+    }
+  }
 
   return h(
     React.Fragment,
@@ -781,7 +853,7 @@ function ResearchPage({ workflows, runs, openRun }) {
       title: "Research hub",
       description: "Search papers, build summaries, and manage citations.",
       actions: [
-        h("button", { className: "button primary", key: "search" }, "New Paper Search"),
+        h("button", { className: "button primary", key: "search", onClick: runPaperSearch, disabled: paperLoading }, paperLoading ? "Searching..." : "Search with Gemma4"),
       ],
     }),
     h(DomainSummary, {
@@ -791,8 +863,152 @@ function ResearchPage({ workflows, runs, openRun }) {
         ["Needs review", "1"],
       ],
     }),
+    h(AgenticPaperSearchPanel, { query: paperQuery, setQuery: setPaperQuery, limit: paperLimit, setLimit: setPaperLimit, result: paperResult, error: paperError, loading: paperLoading, trace: paperTrace, elapsed: paperElapsed, runSearch: runPaperSearch }),
     h(WorkspacePage, { workflow, runs, openRun, taskMode: true }),
   );
+}
+
+function pendingResearchTrace(id, tool, detail) {
+  return { id, tool, detail, status: "pending" };
+}
+
+function runningResearchTrace(id, tool, detail) {
+  return { id, tool, detail, status: "running", started_at: new Date().toISOString() };
+}
+
+function normalizeResearchTrace(trace) {
+  return Array.isArray(trace) ? trace : [];
+}
+
+function failRunningResearchTrace(trace, detail) {
+  return trace.map((step) => step.status === "running" ? { ...step, status: "failed", detail } : step);
+}
+
+function AgenticPaperSearchPanel({ query, setQuery, limit, setLimit, result, error, loading, trace, elapsed, runSearch }) {
+  return h(
+    "section",
+    { className: "panel" },
+    h("div", { className: "panel-header" }, h("h2", null, "Agentic ML Paper Search"), h(Badge, { tone: "blue" }, result?.model || "gemma4:e2b")),
+    h(
+      "div",
+      { className: "panel-body workspace-stack" },
+      h(
+        "div",
+        { className: "research-query-row" },
+        h("div", { className: "field" }, h("label", null, "Query"), h("input", { className: "input", value: query, onChange: (event) => setQuery(event.target.value), placeholder: "agentic AI agents machine learning" })),
+        h("div", { className: "field" }, h("label", null, "Papers"), h("input", { className: "input", type: "number", min: "1", max: "10", value: limit, onChange: (event) => setLimit(event.target.value) })),
+        h("button", { className: "button primary", onClick: runSearch, disabled: loading }, loading ? "Searching..." : "Run Search"),
+      ),
+      h(ResearchTracePanel, { trace, loading, elapsed }),
+      error ? h("div", { className: "loading-strip" }, error) : null,
+      result?.summary
+        ? h("div", { className: "field" }, h("label", null, "Gemma4 Summary"), h(MarkdownBlock, { text: result.summary, className: "research-summary" }))
+        : h(EmptyState, { title: "No summary yet", body: "Run a search to retrieve arXiv papers and summarize them with local Gemma4." }),
+      result?.reasoning_summary?.length
+        ? h(ReasoningSummaryPanel, { items: result.reasoning_summary })
+        : null,
+      result?.papers?.length
+        ? h(
+            "div",
+            { className: "paper-list" },
+            result.papers.map((paper) =>
+              h(
+                "article",
+                { className: "paper-item", key: paper.id || paper.title },
+                h("div", { className: "paper-title-row" }, h("h3", null, paper.title), paper.link ? h("a", { className: "paper-link", href: paper.link, target: "_blank", rel: "noreferrer" }, "arXiv") : null),
+                h("p", { className: "subtle" }, [paper.published, paper.authors?.slice(0, 3).join(", ")].filter(Boolean).join(" - ")),
+                h("p", { className: "subtle" }, paper.summary),
+              ),
+            ),
+          )
+        : null,
+    ),
+  );
+}
+
+function DisclosurePanel({ title, meta, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return h(
+    "section",
+    { className: `disclosure-panel ${open ? "open" : ""}` },
+    h(
+      "button",
+      { className: "disclosure-trigger", type: "button", onClick: () => setOpen((current) => !current), "aria-expanded": open },
+      h("span", { className: "disclosure-title" }, h("span", { className: "disclosure-caret" }, open ? "▾" : "▸"), title),
+      meta ? h("span", { className: "disclosure-meta" }, meta) : null,
+    ),
+    open ? h("div", { className: "disclosure-body" }, children) : null,
+  );
+}
+
+function ReasoningSummaryPanel({ items }) {
+  return h(
+    DisclosurePanel,
+    { title: "Visible Reasoning Summary", meta: h(Badge, { tone: "gray" }, `${items.length} items`), defaultOpen: false },
+    h(
+      "div",
+      { className: "reasoning-list" },
+      items.map((item, index) =>
+        h("div", { className: "reasoning-item", key: index }, h("strong", null, `Reason ${index + 1}`), h("span", { className: "subtle" }, item)),
+      ),
+    ),
+  );
+}
+
+function MarkdownBlock({ text, className = "" }) {
+  const html = DOMPurify.sanitize(marked.parse(text || ""));
+  return h("div", {
+    className: `markdown-body ${className}`.trim(),
+    dangerouslySetInnerHTML: { __html: html },
+  });
+}
+
+function ResearchTracePanel({ trace, loading, elapsed }) {
+  const items = normalizeResearchTrace(trace);
+  if (items.length === 0) return null;
+  return h(
+    DisclosurePanel,
+    {
+      title: "Toolchain Trace",
+      meta: loading ? h(Badge, { tone: "blue" }, `${elapsed}s`) : h(Badge, { tone: "green" }, "ready"),
+      defaultOpen: loading,
+    },
+    h(
+      "div",
+      { className: "trace-list" },
+      items.map((step) =>
+        h(
+          "div",
+          { className: `trace-step ${step.status || "pending"}`, key: step.id },
+          h("div", { className: "trace-dot" }),
+          h(
+            "div",
+            { className: "trace-step-main" },
+            h("strong", null, step.tool || step.id),
+            h("span", { className: "subtle" }, step.detail || ""),
+            step.metadata ? h("span", { className: "mono subtle" }, traceMetadata(step.metadata)) : null,
+          ),
+          h(Badge, { tone: traceTone(step.status) }, step.status || "pending"),
+        ),
+      ),
+    ),
+  );
+}
+
+function traceTone(status) {
+  if (status === "completed") return "green";
+  if (status === "running") return "blue";
+  if (status === "failed") return "red";
+  return "gray";
+}
+
+function traceMetadata(metadata) {
+  const parts = [];
+  if (metadata.paper_count != null) parts.push(`${metadata.paper_count} papers`);
+  if (metadata.model) parts.push(metadata.model);
+  if (metadata.prompt_eval_count) parts.push(`${metadata.prompt_eval_count} prompt tokens`);
+  if (metadata.eval_count) parts.push(`${metadata.eval_count} output tokens`);
+  return parts.join(" - ");
 }
 
 function CreatePage({ workflows, runs, openRun }) {

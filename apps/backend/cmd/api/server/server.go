@@ -314,6 +314,9 @@ func NewRouter() *gin.Engine {
 	// Routes (start-only API)
 	r.GET("/health", handleHealth)
 	r.POST("/api/chat/ollama", handleOllamaChat(ollama.NewClient()))
+	r.POST("/research/arxiv-papers", handleAgenticPaperArxivSearch("", nil))
+	r.POST("/research/summarize-papers", handleAgenticPaperSummary(nil))
+	r.POST("/research/agentic-papers", handleAgenticPaperSearch("", nil, nil))
 	r.POST("/workflow/start", handleStartWorkflow(baseDeps, runs, checkpoints))
 	r.GET("/workflows/files", func(c *gin.Context) {
 		workflows, err := listWorkflowFiles()
