@@ -2,6 +2,7 @@
 /rivulet
 /flowd
 /api
+/bin/
 *.exe
 *.exe~
 *.dll
@@ -13,6 +14,8 @@
 *.out
 go.work
 go.work.sum
+!/Manifield/go.work
+!/Manifield/go.work.sum
 
 # IDE and editor files
 .vscode/

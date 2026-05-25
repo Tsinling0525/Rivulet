@@ -41,11 +41,3 @@ func ScriptsDir() string { return filepath.Join(DataDir(), "scripts") }
 
 // FilesDir returns directory for attachments under a workflow
 func FilesDir(workflowID string) string { return filepath.Join(DataDir(), "files", workflowID) }
-
-// FrontendDir returns the directory storing the frontend assets.
-func FrontendDir() string {
-	if v := os.Getenv("RIV_FRONTEND_DIR"); v != "" {
-		return v
-	}
-	return filepath.Join("apps", "frontend")
-}
