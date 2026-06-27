@@ -29,6 +29,43 @@ make test
 make run
 ```
 
+## Agent CLI MVP
+
+Rivulet includes a minimal Claude Code-style agent loop:
+
+```text
+goal -> plan -> tool call -> observation -> reflection -> stop/replan
+```
+
+Set an OpenAI key, then run one goal:
+
+```bash
+export OPENAI_API_KEY=...
+go run ./cmd/rivulet agent --once "inspect this repo and run the tests"
+```
+
+To use DeepSeek instead:
+
+```bash
+export DEEPSEEK_API_KEY=...
+go run ./cmd/rivulet agent --provider deepseek --once "inspect this repo and run the tests"
+```
+
+Or start the interactive loop:
+
+```bash
+go run ./cmd/rivulet agent
+```
+
+Useful flags:
+
+```bash
+go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash --max-steps 12
+```
+
+The MVP tools are `list_files`, `read_file`, `edit_file`, `write_file`, and `shell`.
+File tools are scoped to the selected workspace directory.
+
 `make run` executes the sample n8n workflow through the CLI. You can run any workflow
 file directly:
 

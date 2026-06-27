@@ -26,6 +26,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "agent":
+		if err := runAgentCLI(os.Args[2:]); err != nil {
+			fmt.Println("error:", err)
+			os.Exit(1)
+		}
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
 		file := fs.String("file", "", "Path to n8n workflow JSON")
@@ -51,6 +56,7 @@ func main() {
 
 func printUsage() {
 	fmt.Println("Usage:")
+	fmt.Println("  rivulet agent [--once goal] # run the coding agent loop")
 	fmt.Println("  rivulet run --file path    # run workflow JSON once")
 	fmt.Println("  rivulet sample             # run the built-in echo sample")
 }
