@@ -54,6 +54,7 @@ config.local.*
 
 # Runtime and cache directories
 /.cache/
+/.rivulet/
 /node_modules/
 /.npm/
 /.yarn/

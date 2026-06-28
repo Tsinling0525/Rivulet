@@ -18,19 +18,26 @@ import (
 const (
 	defaultFileReadLimit = 20000
 	maxToolOutputBytes   = 24000
+	approveAlways        = "always"
+	approveNever         = "never"
 )
 
-func newCodingToolRegistry(cwd string, out io.Writer) *agent.Registry {
+func newCodingToolRegistry(cwd string, out io.Writer, approveModes ...string) *agent.Registry {
 	root, err := filepath.Abs(cwd)
 	if err != nil {
 		root = cwd
 	}
+	approveMode := approveAlways
+	if len(approveModes) > 0 && strings.TrimSpace(approveModes[0]) != "" {
+		approveMode = strings.ToLower(strings.TrimSpace(approveModes[0]))
+	}
 	return agent.NewRegistry(
 		newListFilesTool(root, out),
 		newReadFileTool(root, out),
-		newEditFileTool(root, out),
-		newWriteFileTool(root, out),
-		newShellTool(root, out),
+		newEditFileTool(root, out, approveMode),
+		newReplaceLinesTool(root, out, approveMode),
+		newWriteFileTool(root, out, approveMode),
+		newShellTool(root, out, approveMode),
 	)
 }
 
@@ -106,6 +113,7 @@ func newReadFileTool(root string, out io.Writer) agent.Tool {
 		}
 		offset, _ := intArg(call.Args, "offset")
 		limit, _ := intArg(call.Args, "limit")
+		lineNumbers, _ := boolArg(call.Args, "line_numbers")
 		if limit <= 0 || limit > defaultFileReadLimit {
 			limit = defaultFileReadLimit
 		}
@@ -126,20 +134,26 @@ func newReadFileTool(root string, out io.Writer) agent.Tool {
 			end = len(data)
 		}
 		content := string(data[offset:end])
+		output := map[string]any{
+			"path":      displayPath(root, resolved),
+			"content":   content,
+			"offset":    offset,
+			"truncated": end < len(data),
+		}
+		if lineNumbers {
+			startLine := 1 + strings.Count(string(data[:offset]), "\n")
+			output["line_numbers"] = true
+			output["numbered_content"] = numberLines(content, startLine)
+		}
 		return agent.Observation{
 			ToolName: "read_file",
 			Summary:  fmt.Sprintf("read %d bytes from %s", len(content), displayPath(root, resolved)),
-			Output: map[string]any{
-				"path":      displayPath(root, resolved),
-				"content":   content,
-				"offset":    offset,
-				"truncated": end < len(data),
-			},
+			Output:   output,
 		}, nil
 	})
 }
 
-func newEditFileTool(root string, out io.Writer) agent.Tool {
+func newEditFileTool(root string, out io.Writer, approveMode string) agent.Tool {
 	return agent.NewToolFunc("edit_file", func(ctx context.Context, call agent.ToolCall) (agent.Observation, error) {
 		path, ok := stringArg(call.Args, "path")
 		if !ok {
@@ -159,6 +173,19 @@ func newEditFileTool(root string, out io.Writer) agent.Tool {
 			return agent.Observation{}, err
 		}
 		fmt.Fprintf(out, "tool:edit_file %s\n", displayPath(root, resolved))
+		if approveMode == approveNever {
+			return agent.Observation{
+				ToolName: "edit_file",
+				Summary:  fmt.Sprintf("dry run: would update %s", displayPath(root, resolved)),
+				Output: map[string]any{
+					"path":        displayPath(root, resolved),
+					"dry_run":     true,
+					"replace_all": replaceAll,
+					"old_preview": truncateText(oldText, 300),
+					"new_preview": truncateText(newText, 300),
+				},
+			}, nil
+		}
 
 		data, err := os.ReadFile(resolved)
 		if err != nil {
@@ -192,7 +219,78 @@ func newEditFileTool(root string, out io.Writer) agent.Tool {
 	})
 }
 
-func newWriteFileTool(root string, out io.Writer) agent.Tool {
+func newReplaceLinesTool(root string, out io.Writer, approveMode string) agent.Tool {
+	return agent.NewToolFunc("replace_lines", func(ctx context.Context, call agent.ToolCall) (agent.Observation, error) {
+		path, ok := stringArg(call.Args, "path")
+		if !ok {
+			return agent.Observation{}, fmt.Errorf("path is required")
+		}
+		startLine, ok := intArg(call.Args, "start_line")
+		if !ok {
+			return agent.Observation{}, fmt.Errorf("start_line is required")
+		}
+		endLine, ok := intArg(call.Args, "end_line")
+		if !ok {
+			endLine = startLine
+		}
+		content, ok := stringArg(call.Args, "content")
+		if !ok {
+			content = ""
+		}
+		resolved, err := resolveWorkspacePath(root, path)
+		if err != nil {
+			return agent.Observation{}, err
+		}
+		fmt.Fprintf(out, "tool:replace_lines %s:%d-%d\n", displayPath(root, resolved), startLine, endLine)
+
+		data, err := os.ReadFile(resolved)
+		if err != nil {
+			return agent.Observation{}, err
+		}
+		lines := splitLinesPreserveEndings(string(data))
+		lineCount := len(lines)
+		if err := validateLineRange(startLine, endLine, lineCount); err != nil {
+			return agent.Observation{}, err
+		}
+		removedLines := 0
+		if endLine >= startLine {
+			removedLines = endLine - startLine + 1
+		}
+		newLines := countReplacementLines(content)
+		if approveMode == approveNever {
+			return agent.Observation{
+				ToolName: "replace_lines",
+				Summary:  fmt.Sprintf("dry run: would replace %d line(s) in %s", removedLines, displayPath(root, resolved)),
+				Output: map[string]any{
+					"path":          displayPath(root, resolved),
+					"start_line":    startLine,
+					"end_line":      endLine,
+					"removed_lines": removedLines,
+					"new_lines":     newLines,
+					"dry_run":       true,
+				},
+			}, nil
+		}
+
+		updated := replaceLineRange(lines, startLine, endLine, content)
+		if err := os.WriteFile(resolved, []byte(updated), 0o644); err != nil {
+			return agent.Observation{}, err
+		}
+		return agent.Observation{
+			ToolName: "replace_lines",
+			Summary:  fmt.Sprintf("replaced %d line(s) in %s", removedLines, displayPath(root, resolved)),
+			Output: map[string]any{
+				"path":          displayPath(root, resolved),
+				"start_line":    startLine,
+				"end_line":      endLine,
+				"removed_lines": removedLines,
+				"new_lines":     newLines,
+			},
+		}, nil
+	})
+}
+
+func newWriteFileTool(root string, out io.Writer, approveMode string) agent.Tool {
 	return agent.NewToolFunc("write_file", func(ctx context.Context, call agent.ToolCall) (agent.Observation, error) {
 		path, ok := stringArg(call.Args, "path")
 		if !ok {
@@ -208,6 +306,18 @@ func newWriteFileTool(root string, out io.Writer) agent.Tool {
 			return agent.Observation{}, err
 		}
 		fmt.Fprintf(out, "tool:write_file %s\n", displayPath(root, resolved))
+		if approveMode == approveNever {
+			return agent.Observation{
+				ToolName: "write_file",
+				Summary:  fmt.Sprintf("dry run: would write %d bytes to %s", len(content), displayPath(root, resolved)),
+				Output: map[string]any{
+					"path":    displayPath(root, resolved),
+					"bytes":   len(content),
+					"append":  appendMode,
+					"dry_run": true,
+				},
+			}, nil
+		}
 
 		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 			return agent.Observation{}, err
@@ -232,7 +342,7 @@ func newWriteFileTool(root string, out io.Writer) agent.Tool {
 	})
 }
 
-func newShellTool(root string, out io.Writer) agent.Tool {
+func newShellTool(root string, out io.Writer, approveMode string) agent.Tool {
 	return agent.NewToolFunc("shell", func(ctx context.Context, call agent.ToolCall) (agent.Observation, error) {
 		command, ok := stringArg(call.Args, "command")
 		if !ok {
@@ -246,6 +356,16 @@ func newShellTool(root string, out io.Writer) agent.Tool {
 			timeoutSeconds = 300
 		}
 		fmt.Fprintf(out, "tool:shell %s\n", command)
+		if approveMode == approveNever {
+			return agent.Observation{
+				ToolName: "shell",
+				Summary:  fmt.Sprintf("dry run: would run command: %s", command),
+				Output: map[string]any{
+					"command": command,
+					"dry_run": true,
+				},
+			}, nil
+		}
 
 		runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
@@ -379,6 +499,75 @@ func shouldSkipDir(name string) bool {
 	default:
 		return false
 	}
+}
+
+func numberLines(content string, startLine int) string {
+	if content == "" {
+		return ""
+	}
+	lines := splitLinesPreserveEndings(content)
+	var b strings.Builder
+	for i, line := range lines {
+		fmt.Fprintf(&b, "%6d\t%s", startLine+i, line)
+		if !strings.HasSuffix(line, "\n") && i < len(lines)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func splitLinesPreserveEndings(content string) []string {
+	if content == "" {
+		return nil
+	}
+	lines := strings.SplitAfter(content, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func validateLineRange(startLine, endLine, lineCount int) error {
+	if startLine < 1 {
+		return fmt.Errorf("start_line must be >= 1")
+	}
+	if startLine > lineCount+1 {
+		return fmt.Errorf("start_line %d is past end of file (%d lines)", startLine, lineCount)
+	}
+	if endLine < startLine-1 {
+		return fmt.Errorf("end_line must be >= start_line - 1")
+	}
+	if endLine > lineCount {
+		return fmt.Errorf("end_line %d is past end of file (%d lines)", endLine, lineCount)
+	}
+	return nil
+}
+
+func replaceLineRange(lines []string, startLine, endLine int, content string) string {
+	startIndex := startLine - 1
+	endIndex := endLine
+	replacement := content
+	if replacement != "" && startIndex < len(lines) && !strings.HasSuffix(replacement, "\n") {
+		replacement += "\n"
+	}
+
+	var b strings.Builder
+	for _, line := range lines[:startIndex] {
+		b.WriteString(line)
+	}
+	b.WriteString(replacement)
+	for _, line := range lines[endIndex:] {
+		b.WriteString(line)
+	}
+	return b.String()
+}
+
+func countReplacementLines(content string) int {
+	if content == "" {
+		return 0
+	}
+	lines := splitLinesPreserveEndings(content)
+	return len(lines)
 }
 
 func truncateText(value string, limit int) string {

@@ -15,12 +15,14 @@ import (
 )
 
 type agentCLIOptions struct {
-	Provider string
-	CWD      string
-	Model    string
-	Endpoint string
-	Once     string
-	MaxSteps int
+	Provider    string
+	CWD         string
+	Model       string
+	Endpoint    string
+	Once        string
+	MaxSteps    int
+	ApproveMode string
+	Trace       string
 }
 
 func runAgentCLI(args []string) error {
@@ -30,25 +32,29 @@ func runAgentCLI(args []string) error {
 	model := fs.String("model", getenvDefault("RIVULET_AGENT_MODEL", ""), "Model name")
 	endpoint := fs.String("endpoint", getenvDefault("RIVULET_AGENT_ENDPOINT", ""), "Model API endpoint")
 	once := fs.String("once", "", "Run one goal and exit")
-	maxSteps := fs.Int("max-steps", 12, "Maximum agent loop steps per goal")
+	maxSteps := fs.Int("max-steps", 24, "Maximum agent loop steps per goal")
+	approve := fs.String("approve", "always", "Approval mode: always or never")
+	trace := fs.String("trace", "on", "Trace logging: on or off")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	opts := agentCLIOptions{
-		Provider: strings.TrimSpace(*provider),
-		CWD:      *cwd,
-		Model:    *model,
-		Endpoint: *endpoint,
-		Once:     strings.TrimSpace(*once),
-		MaxSteps: *maxSteps,
+		Provider:    strings.TrimSpace(*provider),
+		CWD:         *cwd,
+		Model:       *model,
+		Endpoint:    *endpoint,
+		Once:        strings.TrimSpace(*once),
+		MaxSteps:    *maxSteps,
+		ApproveMode: *approve,
+		Trace:       *trace,
 	}
 	return runAgentCLIWithIO(context.Background(), opts, os.Stdin, os.Stdout)
 }
 
 func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, out io.Writer) error {
 	if opts.MaxSteps <= 0 {
-		opts.MaxSteps = 12
+		opts.MaxSteps = 24
 	}
 	cwd, err := filepath.Abs(opts.CWD)
 	if err != nil {
@@ -62,6 +68,22 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 		return fmt.Errorf("cwd is not a directory: %s", cwd)
 	}
 	opts.CWD = cwd
+	opts.ApproveMode = strings.ToLower(strings.TrimSpace(opts.ApproveMode))
+	switch opts.ApproveMode {
+	case "", "always":
+		opts.ApproveMode = approveAlways
+	case "never":
+	default:
+		return fmt.Errorf("unsupported approval mode %q; use always or never", opts.ApproveMode)
+	}
+	opts.Trace = strings.ToLower(strings.TrimSpace(opts.Trace))
+	switch opts.Trace {
+	case "", traceOn:
+		opts.Trace = traceOn
+	case traceOff:
+	default:
+		return fmt.Errorf("unsupported trace mode %q; use on or off", opts.Trace)
+	}
 
 	client, err := newAgentTextClient(opts)
 	if err != nil {
@@ -70,12 +92,12 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 	harness := agent.Harness{
 		Planner:   jsonPlanner{Client: client, CWD: opts.CWD},
 		Reflector: jsonReflector{Client: client},
-		Tools:     newCodingToolRegistry(opts.CWD, out),
+		Tools:     newCodingToolRegistry(opts.CWD, out, opts.ApproveMode),
 		MaxSteps:  opts.MaxSteps,
 	}
 
 	if opts.Once != "" {
-		return runAgentGoal(ctx, harness, opts.Once, out)
+		return runAgentGoal(ctx, harness, opts.Once, out, opts)
 	}
 
 	fmt.Fprintln(out, "Rivulet agent MVP. Type a goal, or \"exit\" to quit.")
@@ -93,7 +115,7 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 			}
 			return nil
 		default:
-			if err := runAgentGoal(ctx, harness, goal, out); err != nil {
+			if err := runAgentGoal(ctx, harness, goal, out, opts); err != nil {
 				fmt.Fprintf(out, "error: %v\n", err)
 			}
 		}
@@ -101,9 +123,14 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 	return scanner.Err()
 }
 
-func runAgentGoal(ctx context.Context, harness agent.Harness, goal string, out io.Writer) error {
+func runAgentGoal(ctx context.Context, harness agent.Harness, goal string, out io.Writer, opts agentCLIOptions) error {
 	fmt.Fprintf(out, "\nGoal: %s\n", goal)
 	result, err := harness.Run(ctx, goal)
+	if tracePath, traceErr := writeAgentTrace(opts.CWD, opts.Trace, result); traceErr != nil {
+		fmt.Fprintf(out, "trace error: %v\n", traceErr)
+	} else if tracePath != "" {
+		fmt.Fprintf(out, "Trace: %s\n", tracePath)
+	}
 	for _, step := range result.Steps {
 		fmt.Fprintf(out, "\n[%d] %s\n", step.Index, step.Plan.Summary)
 		if step.Observation.Error != "" {
@@ -157,8 +184,11 @@ func newAgentTextClient(opts agentCLIOptions) (openAITextClient, error) {
 			APIKey:          apiKey,
 			Model:           model,
 			Endpoint:        endpoint,
-			MaxOutputTokens: 1400,
+			MaxOutputTokens: 4096,
 			ResponseFormat:  "json_object",
+			ExtraFields: map[string]any{
+				"thinking": map[string]string{"type": "disabled"},
+			},
 		}, nil
 	default:
 		return openAITextClient{}, fmt.Errorf("unsupported provider %q; use openai or deepseek", provider)

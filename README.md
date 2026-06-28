@@ -60,11 +60,19 @@ go run ./cmd/rivulet agent
 Useful flags:
 
 ```bash
-go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash --max-steps 12
+go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash --max-steps 24 --approve always --trace on
 ```
 
-The MVP tools are `list_files`, `read_file`, `edit_file`, `write_file`, and `shell`.
+The MVP tools are `list_files`, `read_file`, `edit_file`, `replace_lines`,
+`write_file`, and `shell`.
 File tools are scoped to the selected workspace directory.
+Use `read_file` with line numbers, then `replace_lines`, when exact text replacement
+would be brittle.
+Use `--approve never` to dry-run mutating tools: `edit_file`, `replace_lines`,
+`write_file`, and `shell` report what they would do without changing files or running
+commands.
+Agent runs write JSONL traces under `.rivulet/runs/` by default. Use `--trace off`
+to disable trace files.
 
 `make run` executes the sample n8n workflow through the CLI. You can run any workflow
 file directly:
