@@ -12,6 +12,7 @@ import (
 	_ "github.com/Tsinling0525/rivulet/nodes/http"
 	_ "github.com/Tsinling0525/rivulet/nodes/llmroute"
 	_ "github.com/Tsinling0525/rivulet/nodes/logic"
+	_ "github.com/Tsinling0525/rivulet/nodes/memory"
 	_ "github.com/Tsinling0525/rivulet/nodes/merge"
 	_ "github.com/Tsinling0525/rivulet/nodes/ollama"
 	_ "github.com/Tsinling0525/rivulet/nodes/openai"

@@ -178,6 +178,11 @@ Rules:
 - Use shell for project commands such as rg, go test, make test, git diff.
 - Do not explain outside JSON.
 
+Failure-aware recovery:
+- If your latest observation is a file-not-found error: use list_files or rg via shell to locate the correct path before retrying.
+- If your latest observation is an old-text-not-found error: use read_file with line_numbers=true to inspect the file before retrying.
+- If an edit fails, consider using replace_lines as a fallback after reading the file with line numbers.
+
 Goal:
 %s
 

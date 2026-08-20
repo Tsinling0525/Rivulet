@@ -25,6 +25,8 @@ type agentCLIOptions struct {
 	Trace       string
 }
 
+const defaultAgentMaxSteps = 48
+
 func runAgentCLI(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)
 	provider := fs.String("provider", getenvDefault("RIVULET_AGENT_PROVIDER", "openai"), "Model provider: openai or deepseek")
@@ -32,7 +34,7 @@ func runAgentCLI(args []string) error {
 	model := fs.String("model", getenvDefault("RIVULET_AGENT_MODEL", ""), "Model name")
 	endpoint := fs.String("endpoint", getenvDefault("RIVULET_AGENT_ENDPOINT", ""), "Model API endpoint")
 	once := fs.String("once", "", "Run one goal and exit")
-	maxSteps := fs.Int("max-steps", 24, "Maximum agent loop steps per goal")
+	maxSteps := fs.Int("max-steps", defaultAgentMaxSteps, "Maximum agent loop steps per goal")
 	approve := fs.String("approve", "always", "Approval mode: always or never")
 	trace := fs.String("trace", "on", "Trace logging: on or off")
 	if err := fs.Parse(args); err != nil {
@@ -54,7 +56,7 @@ func runAgentCLI(args []string) error {
 
 func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, out io.Writer) error {
 	if opts.MaxSteps <= 0 {
-		opts.MaxSteps = 24
+		opts.MaxSteps = defaultAgentMaxSteps
 	}
 	cwd, err := filepath.Abs(opts.CWD)
 	if err != nil {

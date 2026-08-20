@@ -1,0 +1,43 @@
+{
+  "workflow": {
+    "id": "template_memory",
+    "name": "Template: Memory Write and Query",
+    "active": true,
+    "nodes": [
+      {
+        "id": "write_memory",
+        "name": "Write Memory",
+        "type": "memory:write",
+        "typeVersion": 1.0,
+        "position": [100, 100],
+        "parameters": {
+          "user_id_field": "user_id"
+        }
+      },
+      {
+        "id": "query_memory",
+        "name": "Query Memory",
+        "type": "memory:query",
+        "typeVersion": 1.0,
+        "position": [350, 100],
+        "parameters": {
+          "user_id_field": "user_id",
+          "max_results": 3
+        }
+      }
+    ],
+    "connections": {
+      "write_memory": { "main": [[{ "node": "query_memory", "type": "main", "index": 0 }]] }
+    },
+    "settings": {}
+  },
+  "data": {
+    "write_memory": [
+      {
+        "user_id": "demo-user",
+        "memory": "The user bikes to work every weekday.",
+        "query": "How does the user commute to work?"
+      }
+    ]
+  }
+}

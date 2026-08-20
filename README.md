@@ -60,7 +60,7 @@ go run ./cmd/rivulet agent
 Useful flags:
 
 ```bash
-go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash --max-steps 24 --approve always --trace on
+go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash --max-steps 48 --approve always --trace on
 ```
 
 The MVP tools are `list_files`, `read_file`, `edit_file`, `replace_lines`,
@@ -104,6 +104,14 @@ go run ./cmd/rivulet sample
 - `eval:node`
 - `review:gate`
 - `wasm`
+- `memory:write`
+- `memory:update`
+- `memory:query`
+
+Memory nodes keep a small per-user graph in local storage. `memory:write` stores
+propositions, `memory:update` records a change and marks dependent memories for
+review, and `memory:query` returns active matches plus stale or uncertain warnings.
+See `data/workflows/template_memory.json` for a minimal write-and-query flow.
 
 ## Configuration
 

@@ -34,6 +34,21 @@ func TestResolveWorkspacePathRejectsOutsidePath(t *testing.T) {
 	}
 }
 
+func TestAgentDefaultMaxStepsIsConsistent(t *testing.T) {
+	if defaultAgentMaxSteps != 48 {
+		t.Fatalf("unexpected default max steps: %d", defaultAgentMaxSteps)
+	}
+}
+
+func TestPlannerPromptIncludesFailureAwareGuidance(t *testing.T) {
+	prompt := plannerPrompt(t.TempDir(), agent.State{Goal: "test failure guidance"})
+	for _, keyword := range []string{"file-not-found", "old-text-not-found", "replace_lines"} {
+		if !strings.Contains(prompt, keyword) {
+			t.Fatalf("plannerPrompt should contain %q", keyword)
+		}
+	}
+}
+
 func TestNewAgentTextClientDeepSeekDefaults(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
 
