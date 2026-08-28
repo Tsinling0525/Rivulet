@@ -36,30 +36,61 @@ type ToolResolver interface {
 }
 
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
+	mu     sync.RWMutex
+	tools  map[string]registeredTool
+	nextID uint64
+}
+
+type registeredTool struct {
+	tool Tool
+	id   uint64
 }
 
 func NewRegistry(tools ...Tool) *Registry {
-	r := &Registry{tools: map[string]Tool{}}
+	r := &Registry{tools: map[string]registeredTool{}}
 	for _, tool := range tools {
-		r.Register(tool)
+		_ = r.Register(tool)
 	}
 	return r
 }
 
-func (r *Registry) Register(tool Tool) {
+// Register makes a tool available and returns the matching cleanup operation.
+// The disposer restores a tool it replaced, or removes the tool when it was the
+// first registration. It is idempotent and will not undo a later registration
+// of the same name.
+func (r *Registry) Register(tool Tool) func() {
 	if tool == nil || tool.Name() == "" {
-		return
+		return func() {}
 	}
+	name := tool.Name()
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.tools[tool.Name()] = tool
+	previous, hadPrevious := r.tools[name]
+	r.nextID++
+	registrationID := r.nextID
+	r.tools[name] = registeredTool{tool: tool, id: registrationID}
+	r.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			current, ok := r.tools[name]
+			if !ok || current.id != registrationID {
+				return
+			}
+			if hadPrevious {
+				r.tools[name] = previous
+				return
+			}
+			delete(r.tools, name)
+		})
+	}
 }
 
 func (r *Registry) ResolveTool(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	tool, ok := r.tools[name]
-	return tool, ok
+	return tool.tool, ok
 }

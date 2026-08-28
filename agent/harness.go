@@ -27,6 +27,7 @@ type Harness struct {
 	Planner   Planner
 	Reflector Reflector
 	Tools     ToolResolver
+	Events    ExecutionEventSink
 	MaxSteps  int
 	Clock     func() time.Time
 }
@@ -45,10 +46,12 @@ func (h Harness) Run(ctx context.Context, goal string) (RunResult, error) {
 		Status:    RunStatusFailed,
 		StartedAt: h.now(),
 	}
+	h.appendEvent(ctx, &result, "agent_run_started", 0, "agent_loop", map[string]any{"goal": goal})
 	if goal == "" {
 		err := errors.New("agent goal is required")
 		result.Error = err.Error()
 		result.FinishedAt = h.now()
+		h.appendEvent(ctx, &result, "agent_run_failed", 0, "agent_loop", map[string]any{"error": err.Error()})
 		return result, err
 	}
 
@@ -59,13 +62,20 @@ func (h Harness) Run(ctx context.Context, goal string) (RunResult, error) {
 
 	state := State{Goal: goal}
 	for stepIndex := 1; stepIndex <= maxSteps; stepIndex++ {
+		h.appendEvent(ctx, &result, "agent_step_started", stepIndex, "agent_loop", nil)
 		step, err := h.runStep(ctx, state, stepIndex)
 		result.Steps = append(result.Steps, step)
 		state.Steps = append(state.Steps, step)
+		h.appendEvent(ctx, &result, "agent_step_completed", stepIndex, "agent_loop", map[string]any{
+			"tool":       step.Plan.ToolCall.Name,
+			"tool_error": step.Observation.Error,
+			"decision":   string(step.Reflection.Decision),
+		})
 		if err != nil {
 			result.Status = RunStatusFailed
 			result.Error = err.Error()
 			result.FinishedAt = h.now()
+			h.appendEvent(ctx, &result, "agent_run_failed", stepIndex, "agent_loop", map[string]any{"error": err.Error()})
 			return result, err
 		}
 
@@ -74,6 +84,7 @@ func (h Harness) Run(ctx context.Context, goal string) (RunResult, error) {
 			result.Status = RunStatusCompleted
 			result.FinalSummary = step.Reflection.Summary
 			result.FinishedAt = h.now()
+			h.appendEvent(ctx, &result, "agent_run_completed", stepIndex, "agent_loop", map[string]any{"summary": result.FinalSummary})
 			return result, nil
 		case DecisionReplan:
 			continue
@@ -81,6 +92,7 @@ func (h Harness) Run(ctx context.Context, goal string) (RunResult, error) {
 			result.Status = RunStatusFailed
 			result.Error = ErrReflectionDecisionRequired.Error()
 			result.FinishedAt = h.now()
+			h.appendEvent(ctx, &result, "agent_run_failed", stepIndex, "agent_loop", map[string]any{"error": result.Error})
 			return result, ErrReflectionDecisionRequired
 		}
 	}
@@ -88,6 +100,7 @@ func (h Harness) Run(ctx context.Context, goal string) (RunResult, error) {
 	result.Status = RunStatusMaxStepsExceeded
 	result.Error = ErrMaxStepsExceeded.Error()
 	result.FinishedAt = h.now()
+	h.appendEvent(ctx, &result, "agent_run_max_steps_exceeded", maxSteps, "agent_loop", map[string]any{"error": result.Error})
 	return result, ErrMaxStepsExceeded
 }
 
@@ -147,4 +160,18 @@ func (h Harness) now() time.Time {
 		return h.Clock()
 	}
 	return time.Now().UTC()
+}
+
+func (h Harness) appendEvent(ctx context.Context, result *RunResult, eventType string, stepIndex int, component string, fields map[string]any) {
+	event := ExecutionEvent{
+		Type:       eventType,
+		StepIndex:  stepIndex,
+		Component:  component,
+		OccurredAt: h.now(),
+		Fields:     cloneMap(fields),
+	}
+	result.Events = append(result.Events, event)
+	if h.Events != nil {
+		_ = h.Events.AppendExecutionEvent(ctx, event)
+	}
 }

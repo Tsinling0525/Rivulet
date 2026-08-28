@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 )
 
@@ -10,6 +11,53 @@ type plannerFunc func(context.Context, State) (Plan, error)
 
 func (f plannerFunc) Plan(ctx context.Context, state State) (Plan, error) {
 	return f(ctx, state)
+}
+
+type eventSink struct {
+	mu     sync.Mutex
+	events []ExecutionEvent
+}
+
+func (s *eventSink) AppendExecutionEvent(ctx context.Context, event ExecutionEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+	return nil
+}
+
+func TestHarnessExposesReplaceableLoopAndExecutionEvents(t *testing.T) {
+	sink := &eventSink{}
+	var loop AgentLoop = Harness{
+		Planner: plannerFunc(func(context.Context, State) (Plan, error) {
+			return Plan{ToolCall: ToolCall{Name: "echo"}}, nil
+		}),
+		Reflector: reflectorFunc(func(context.Context, State, Observation) (Reflection, error) {
+			return Reflection{Summary: "done", Decision: DecisionStop}, nil
+		}),
+		Tools: NewRegistry(NewToolFunc("echo", func(context.Context, ToolCall) (Observation, error) {
+			return Observation{Summary: "ok"}, nil
+		})),
+		Events: sink,
+	}
+
+	result, err := loop.Run(context.Background(), "complete one step")
+	if err != nil {
+		t.Fatalf("run loop: %v", err)
+	}
+	if len(result.Events) < 3 {
+		t.Fatalf("events = %d, want start, step, and completion", len(result.Events))
+	}
+	if result.Events[0].Type != "agent_run_started" {
+		t.Fatalf("first event = %q, want agent_run_started", result.Events[0].Type)
+	}
+	if got := result.Events[len(result.Events)-1].Type; got != "agent_run_completed" {
+		t.Fatalf("last event = %q, want agent_run_completed", got)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.events) != len(result.Events) {
+		t.Fatalf("sink events = %d, result events = %d", len(sink.events), len(result.Events))
+	}
 }
 
 type reflectorFunc func(context.Context, State, Observation) (Reflection, error)

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Tsinling0525/rivulet/agent"
+	"github.com/Tsinling0525/rivulet/runtime"
 )
 
 type agentCLIOptions struct {
@@ -91,15 +92,32 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 	if err != nil {
 		return err
 	}
+	// This is the composition root for the coding-agent runtime. The loop keeps
+	// explicit constructor dependencies, while the capability context makes the
+	// available contracts and their lifetime visible at startup.
+	scope := runtime.NewScope(ctx)
+	defer func() { _ = scope.Close() }()
+	capabilities := runtime.NewContext()
+	tools := newCodingToolRegistry(opts.CWD, out, opts.ApproveMode)
 	harness := agent.Harness{
 		Planner:   jsonPlanner{Client: client, CWD: opts.CWD},
 		Reflector: jsonReflector{Client: client},
-		Tools:     newCodingToolRegistry(opts.CWD, out, opts.ApproveMode),
+		Tools:     tools,
 		MaxSteps:  opts.MaxSteps,
+	}
+	if err := runtime.ProvideInScope[agent.ToolResolver](scope, capabilities, tools); err != nil {
+		return fmt.Errorf("provide coding tools: %w", err)
+	}
+	if err := runtime.ProvideInScope[agent.AgentLoop](scope, capabilities, harness); err != nil {
+		return fmt.Errorf("provide agent loop: %w", err)
+	}
+	loop, err := runtime.Require[agent.AgentLoop](capabilities)
+	if err != nil {
+		return fmt.Errorf("resolve agent loop: %w", err)
 	}
 
 	if opts.Once != "" {
-		return runAgentGoal(ctx, harness, opts.Once, out, opts)
+		return runAgentGoal(ctx, loop, opts.Once, out, opts)
 	}
 
 	fmt.Fprintln(out, "Rivulet agent MVP. Type a goal, or \"exit\" to quit.")
@@ -117,7 +135,7 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 			}
 			return nil
 		default:
-			if err := runAgentGoal(ctx, harness, goal, out, opts); err != nil {
+			if err := runAgentGoal(ctx, loop, goal, out, opts); err != nil {
 				fmt.Fprintf(out, "error: %v\n", err)
 			}
 		}
@@ -125,9 +143,9 @@ func runAgentCLIWithIO(ctx context.Context, opts agentCLIOptions, in io.Reader, 
 	return scanner.Err()
 }
 
-func runAgentGoal(ctx context.Context, harness agent.Harness, goal string, out io.Writer, opts agentCLIOptions) error {
+func runAgentGoal(ctx context.Context, loop agent.AgentLoop, goal string, out io.Writer, opts agentCLIOptions) error {
 	fmt.Fprintf(out, "\nGoal: %s\n", goal)
-	result, err := harness.Run(ctx, goal)
+	result, err := loop.Run(ctx, goal)
 	if tracePath, traceErr := writeAgentTrace(opts.CWD, opts.Trace, result); traceErr != nil {
 		fmt.Fprintf(out, "trace error: %v\n", traceErr)
 	} else if tracePath != "" {

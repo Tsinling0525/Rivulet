@@ -16,6 +16,7 @@ Rivulet/
 ├── model/             # workflow, node, review, file types
 ├── nodes/             # built-in node handlers
 ├── plugin/            # node interfaces and registry
+├── runtime/            # scoped capability composition and lifecycle
 ├── data/              # example workflows, scripts, and files
 ├── Manifield/         # extracted AI frontend/backend product
 └── Makefile
@@ -73,6 +74,10 @@ Use `--approve never` to dry-run mutating tools: `edit_file`, `replace_lines`,
 commands.
 Agent runs write JSONL traces under `.rivulet/runs/` by default. Use `--trace off`
 to disable trace files.
+
+See [the runtime architecture](docs/architecture.md) for the capability graph,
+lifecycle ownership model, agent-loop contract, event migration, and security
+boundaries.
 
 `make run` executes the sample n8n workflow through the CLI. You can run any workflow
 file directly:
