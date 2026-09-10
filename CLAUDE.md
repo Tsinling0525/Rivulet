@@ -5,75 +5,63 @@ This file provides guidance to Claude Code when working with this repository.
 ## Commands
 
 ```bash
-make run       # Run the sample workflow through the CLI
-make build     # Build CLI binary -> bin/rivulet
+make run       # interactive agent loop in the repo root
+make build     # build CLI binary -> bin/rivulet
 make test      # go test ./... -race -count=1
+make vet       # go vet ./...
 make lint      # golangci-lint run ./...
 ```
 
 Single test:
 
 ```bash
-go test ./engine/... -run TestXxx -race
+go test ./cmd/rivulet -run TestSendTrigger -race
+go test ./agent -run TestHarness -race
 ```
-
-Manual workflow execution:
-
-```bash
-./bin/rivulet run --file data/workflows/n8n_workflow.json
-go run ./cmd/rivulet run --file data/workflows/n8n_workflow.json
-```
-
-The larger AI HTTP API and frontend product now lives under `Manifield/`.
 
 ## Architecture
 
-Rivulet is a CLI workflow orchestration engine with n8n-compatible workflow JSON.
-Workflows are DAGs of typed nodes executed in topological order.
+Rivulet is a coding-agent CLI. It is **not** a workflow engine: n8n and Dify own
+workflow design, scheduling, and automation. Rivulet's only integration with them is
+`rivulet trigger`, an HTTP call to an external webhook/API.
 
-### Backend
+Three packages, standard library only:
 
 **Entry point**: `cmd/rivulet/`
 
-**Core execution path:**
-1. `cmd/rivulet/run.go` - reads workflow JSON, converts n8n format, runs the engine.
-2. `format/n8n/` - converts n8n-style workflow requests to internal models.
-3. `engine/executor.go` - topological sort, node execution, retry/timeout, event emission.
-4. `plugin/registry.go` and `plugin/node.go` - `NodeHandler` interface and registry.
-5. `nodes/<name>/` - built-in node implementations.
-6. `infra/` - local files, stores, queues, state, and test helpers.
+1. `main.go` - dispatches the `agent` and `trigger` subcommands, prints usage.
+2. `agent_cmd.go` - agent flags, provider selection, and the composition root that
+   provides `agent.ToolResolver` and `agent.AgentLoop` into a `runtime.Scope`.
+3. `agent_openai.go` - OpenAI-compatible chat/responses client used by the planner
+   and reflector (`openai` and `deepseek` providers).
+4. `agent_tools.go` - `list_files`, `read_file`, `edit_file`, `replace_lines`,
+   `write_file`, `shell`, confined to `--cwd` and gated by the approval mode.
+5. `agent_trace.go` - JSONL run traces under `.rivulet/runs/`, with redaction.
+6. `trigger.go` - `rivulet trigger --url ... [--data|--file] [--header ...]`.
 
-**Plugin contract:**
-
-```go
-func (n *Node) Init(ctx context.Context, deps plugin.Deps) error
-func (n *Node) Process(ctx context.Context, wf model.Workflow, node model.Node, in model.Items) (model.Items, error)
-func init() { plugin.Register("type:name", func() plugin.NodeHandler { return &Node{} }) }
-```
-
-When adding a node, create `nodes/<name>/`, implement `NodeHandler`,
-register it in `init()`, and import it in `cmd/rivulet/main.go`.
-
-### Data Layout
+**Harness**: `agent/`
 
 ```text
-data/
-  workflows/    example workflow JSON definitions
-  scripts/      Python scripts used by python:script nodes
-  files/<wfid>/ workflow file inputs/outputs
-  store/        local persisted state used by supporting infra
+goal -> plan -> one tool call -> observation -> reflection -> stop/replan
 ```
 
-### Key Environment Variables
+`Planner` and `Reflector` are interfaces; `Harness` is the only implementation.
+`VerificationHarness` wraps a loop with a grader and retries with feedback.
+Tool failures become observations so the reflector decides to stop or replan.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `RIV_DATA_DIR` | `data/` | Root for data paths |
-| `OPENAI_API_KEY` | - | Required for OpenAI-backed nodes |
+**Capabilities**: `runtime/` - `NewScope`, `NewContext`, `ProvideInScope`, `Require`.
+Effects registered in a scope are disposed in reverse order when it closes.
 
 ## Conventions
 
-- Node type strings are namespaced lowercase, for example `http:get`, `python:script`, `llm:route`, `merge.concat`.
-- Workflow format is n8n-compatible JSON with top-level `workflow` and `data` keys.
+- Standard library only. `go.mod` has no `require` block; do not add dependencies
+  without a reason.
+- Never reintroduce a node registry, DAG scheduler, or workflow store. Workflows
+  belong in n8n/Dify.
+- Keep the model client, tools, and harness constructor-injected so tests can replace
+  them; only the composition root touches `os.Getenv`.
+- Credentials are read from the environment and must never reach a trace file or CLI
+  output; `agent_trace.go` redacts keys, tokens, secrets, and passwords.
+- Go 1.22, `gofmt`/`goimports`, tabs, 100-column soft limit, explicit error handling,
+  no panics in library code.
 - Tests are table-driven when practical and live next to the package they test.
-- Style is Go 1.22, `gofmt`/`goimports`, tabs, 100-col soft limit, explicit error handling, no panics in library code.

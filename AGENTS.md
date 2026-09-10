@@ -1,47 +1,43 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `cmd/rivulet/` - CLI entrypoint (`main.go`, agent loop, `run`, `sample` subcommands).
-- `agent/` - agent harness control loop.
-- `engine/` - core scheduler, executor, retry, and pause logic.
-- `model/` - workflow, node, review, and file types.
-- `plugin/` - `NodeHandler` interface, `Deps`, and `Register`/`New` registry.
-- `nodes/` - built-in node handlers: `echo`, `eval`, `files`, `fs`, `http`, `llmroute`, `logic`, `merge`, `ollama`, `openai`, `review`, `wasm`. The `llm` package is a shared cache/lib, not a handler. The `python` package exists but is not imported by default.
-- `format/` - n8n JSON parser.
-- `infra/` - local storage, paths, queue, and workflow support.
-- `data/` - example workflows, scripts, and files.
-- `Manifield/` - a separate Go workspace (`go.work`) containing the productized AI frontend/backend, HTTP API server, and research backend. Do not modify alongside core Rivulet changes; it has its own build constraints.
-- Tests live next to packages (e.g. `format/n8n/parser_test.go`).
+- `cmd/rivulet/` - CLI entrypoint: `main.go` (dispatch), `agent_cmd.go` (agent flags/composition root), `agent_openai.go` (OpenAI-compatible client), `agent_tools.go` (coding tools + approval), `agent_trace.go` (JSONL traces, secret redaction), `trigger.go` (n8n/Dify bridge).
+- `agent/` - agent harness: planner/tool/reflector policy, tool registry, verification loop.
+- `runtime/` - scoped capability composition (`Context`, `Scope`, `ProvideInScope`, `Require`).
+- `docs/architecture.md` - capability model, lifecycle ownership, security invariants.
+- Tests live next to packages (`agent/harness_test.go`, `cmd/rivulet/trigger_test.go`).
+
+Module: `github.com/Tsinling0525/rivulet`, Go 1.22, **standard library only** — `go.mod` has no `require` block and `go.sum` does not exist. Adding a dependency needs a stated reason.
+
+## What this repo is not
+There is no workflow engine, node registry, DAG scheduler, or workflow store, and there must not be one again.
+Workflow design, scheduling, retries, and long-running automation belong to n8n or Dify.
+The single integration point is `rivulet trigger`, which POSTs a payload to an external webhook/API URL and prints the response.
+Do not reintroduce a node handler API behind this boundary; if something needs a workflow, express it in n8n/Dify and trigger it.
 
 ## Build, Test, and Development Commands
-- `make build` - build CLI to `bin/rivulet`.
-- `make test` - run `go test ./... -race -count=1`.
-- `make lint` - run `golangci-lint`; gracefully warns if not installed.
-- `make run` - execute the sample n8n workflow (`go run ./cmd/rivulet run --file data/workflows/n8n_workflow.json`).
-- Run a single test: `go test ./path/to/package -run TestName -race`.
-- Module path: `github.com/Tsinling0525/rivulet` (Go 1.22).
-
-## Node Registration (Critical)
-- Every node handler implements `plugin.NodeHandler` and registers itself via `init()` using `plugin.Register(nodeType, factory)`.
-- All registered nodes MUST be imported as blank imports in `cmd/rivulet/main.go`. Without the import, the `init()` never runs and the node is unavailable.
-- Node type strings are namespaced: `http:get`, `python:script`, `merge.concat`, `llm:route`, etc.
+- `make build` - build the CLI to `bin/rivulet`.
+- `make test` - `go test ./... -race -count=1`.
+- `make vet` - `go vet ./...`.
+- `make lint` - `golangci-lint`; warns gracefully if not installed.
+- `make run` - interactive agent loop in the repo root.
+- Run a single test: `go test ./cmd/rivulet -run TestSendTrigger -race`.
 
 ## Coding Conventions
-- Nodes go under `nodes/<name>/`, one package per node type. Node type string and package dir name are usually the same.
-- Filenames: lowercase with underscores if needed.
-- Keep changes minimal and scoped. Prefer `make` targets; do not reformat unrelated files.
-
-## Testing
+- Go 1.22, `gofmt`/`goimports`, tabs, 100-column soft limit, explicit error handling, no panics in library code.
+- Keep changes minimal and scoped; prefer the `make` targets; do not reformat unrelated files.
 - Table-driven tests preferred. Files as `*_test.go` next to the package under test.
+- Testable cores take explicit inputs: `sendTrigger(ctx, client, opts, out)` and `resolveTriggerBody(data, file, stdin)` are separated from flag parsing for exactly this reason.
 
 ## Agent-Specific Instructions
-- Agent tool scoping: file tools (`read_file`, `edit_file`, `write_file`) are scoped to the selected workspace directory.
-- `--approve never` runs the agent in dry-run mode: mutating tools report intent without changing files or running commands.
-- Agent runs write JSONL traces under `.rivulet/runs/` by default; `--trace off` disables this.
-- Use `read_file` with line numbers, then `replace_lines`, for operations where exact text replacement would be brittle.
+- File tools (`list_files`, `read_file`, `edit_file`, `replace_lines`, `write_file`) are confined to `--cwd`.
+- `--approve never` is a dry run: mutating tools report intent without changing files or running commands. Preserve this invariant when adding tools.
+- Agent runs write JSONL traces under `.rivulet/runs/` by default; `--trace off` disables them, and trace records must stay redacted for API keys, tokens, secrets, and passwords.
+- `runtime.ProvideInScope` owns cleanup: capabilities registered in a scope must be disposed when the scope closes.
+- Use `read_file` with line numbers, then `replace_lines`, when exact text replacement would be brittle.
 
 ## Configuration
-- `RIV_DATA_DIR` overrides the data root (default: `data/`).
-- Python nodes execute local scripts from `data/scripts/` with no sandboxing; only use with trusted scripts.
-- OpenAI-backed nodes read `OPENAI_API_KEY` unless configured otherwise.
-- File attachments are read from `data/files/<workflowID>/`.
+- `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` - model credentials for the agent.
+- `RIVULET_AGENT_PROVIDER`, `RIVULET_AGENT_MODEL`, `RIVULET_AGENT_ENDPOINT` - agent defaults.
+- `RIVULET_TRIGGER_URL` - default URL for `rivulet trigger`.
+- Credentials stay in the environment: they are never capability values, trace fields, or CLI output.

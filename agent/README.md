@@ -30,6 +30,7 @@ This maps the first two loop-engineering layers directly into Rivulet:
 - Agent loop: `Harness`
 - Verification loop: `VerificationHarness`
 
-Event-driven loops are handled outside this package by workflow scheduling and trigger
-infrastructure. Hill-climbing loops can consume persisted run events and verification
-grades to propose prompt, tool, or rubric changes.
+Event-driven loops are handled outside this package: workflow scheduling, triggers,
+and retries live in n8n or Dify and are invoked through `rivulet trigger`. Hill-climbing
+loops can consume persisted run events and verification grades to propose prompt, tool,
+or rubric changes.

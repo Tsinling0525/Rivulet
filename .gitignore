@@ -1,28 +1,17 @@
-# Binaries and executables
-/rivulet
-/flowd
-/api
+# Build output
 /bin/
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-
-# Go build artifacts
 *.test
 *.out
-go.work
-go.work.sum
-!/Manifield/go.work
-!/Manifield/go.work.sum
 
-# IDE and editor files
+# Editor and OS
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 .DS_Store
 Thumbs.db
 
@@ -33,17 +22,11 @@ Thumbs.db
 /logs/
 /tmp/
 
-# Data directories (user-generated content)
-/data/files/*/
-!/data/files/.gitkeep
-/data/uploads/
-/data/temp/
+# Runtime data (agent traces, caches)
+/.rivulet/
+/.cache/
 
-# Keep example/template files but ignore user data
-#!/data/workflows/*.json
-#!/data/scripts/*.py
-
-# Environment and configuration files
+# Secrets and local configuration
 .env
 .env.local
 .env.*.local
@@ -52,37 +35,13 @@ config.local.*
 *.pem
 *.crt
 
-# Runtime and cache directories
-/.cache/
-/.rivulet/
-/node_modules/
-/.npm/
-/.yarn/
-
-# Test coverage
+# Coverage and vendoring
 coverage.out
 coverage.html
 *.cover
-
-# Vendor directory (if using vendor)
 /vendor/
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Application specific
-/data/state/
-/data/logs/
-*.pid
-*.sock
-
-# Backup files
+# Backups
 *.bak
 *.backup
 *~

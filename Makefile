@@ -1,19 +1,20 @@
 BINARY ?= rivulet
 PKG := ./...
+GO ?= go
 
-.PHONY: run test test-manual lint build
+.PHONY: run test lint vet build
 
 run:
-	go run ./cmd/rivulet run --file data/workflows/n8n_workflow.json
+	$(GO) run ./cmd/rivulet agent
 
 test:
-	go test $(PKG) -race -count=1
-
-test-manual:
-	go run ./cmd/rivulet run --file data/workflows/n8n_workflow.json
+	$(GO) test $(PKG) -race -count=1
 
 lint:
 	@golangci-lint run ./... || echo "Install golangci-lint for linting"
 
+vet:
+	$(GO) vet ./...
+
 build:
-	go build -o bin/$(BINARY) ./cmd/rivulet
+	$(GO) build -o bin/$(BINARY) ./cmd/rivulet
