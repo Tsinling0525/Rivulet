@@ -1,0 +1,117 @@
+version: "0.6.0"
+kind: app
+app:
+  name: Branch
+  mode: workflow
+  description: Routes on a numeric input and merges both branches with a variable aggregator
+  icon: "\U0001F500"
+  icon_type: emoji
+workflow:
+  graph:
+    nodes:
+      - id: "start_node"
+        type: custom
+        position: {x: 80, y: 282}
+        data:
+          type: start
+          title: Start
+          variables:
+            - variable: count
+              label: count
+              type: number
+              required: true
+      - id: "cond_node"
+        type: custom
+        position: {x: 380, y: 282}
+        data:
+          type: if-else
+          title: IF/ELSE
+          desc: "count > 5 takes the big branch"
+          cases:
+            - id: "big"
+              case_id: "big"
+              logical_operator: and
+              conditions:
+                - id: "c1"
+                  variable_selector: ["start_node", "count"]
+                  comparison_operator: ">"
+                  value: 5
+                  varType: number
+      - id: "big_node"
+        type: custom
+        position: {x: 680, y: 180}
+        data:
+          type: template-transform
+          title: Big
+          template: "{{ count }} is greater than five"
+          variables:
+            - variable: count
+              value_selector: ["start_node", "count"]
+              value_type: number
+      - id: "small_node"
+        type: custom
+        position: {x: 680, y: 380}
+        data:
+          type: template-transform
+          title: Small
+          template: "{{ count }} is five or less"
+          variables:
+            - variable: count
+              value_selector: ["start_node", "count"]
+              value_type: number
+      - id: "aggregate_node"
+        type: custom
+        position: {x: 980, y: 282}
+        data:
+          type: variable-aggregator
+          title: Aggregator
+          desc: "Whichever branch ran"
+          output_type: string
+          variables:
+            - ["big_node", "output"]
+            - ["small_node", "output"]
+      - id: "end_node"
+        type: custom
+        position: {x: 1280, y: 282}
+        data:
+          type: end
+          title: End
+          outputs:
+            - variable: result
+              value_selector: ["aggregate_node", "output"]
+              value_type: string
+    edges:
+      - id: "start_node-source-cond_node-target"
+        source: "start_node"
+        sourceHandle: "source"
+        target: "cond_node"
+        targetHandle: "target"
+      - id: "cond_node-big-big_node-target"
+        source: "cond_node"
+        sourceHandle: "big"
+        target: "big_node"
+        targetHandle: "target"
+      - id: "cond_node-false-small_node-target"
+        source: "cond_node"
+        sourceHandle: "false"
+        target: "small_node"
+        targetHandle: "target"
+      - id: "big_node-source-aggregate_node-target"
+        source: "big_node"
+        sourceHandle: "source"
+        target: "aggregate_node"
+        targetHandle: "target"
+      - id: "small_node-source-aggregate_node-target"
+        source: "small_node"
+        sourceHandle: "source"
+        target: "aggregate_node"
+        targetHandle: "target"
+      - id: "aggregate_node-source-end_node-target"
+        source: "aggregate_node"
+        sourceHandle: "source"
+        target: "end_node"
+        targetHandle: "target"
+    viewport: {x: 0, y: 0, zoom: 0.6}
+  features: {}
+  environment_variables: []
+  conversation_variables: []

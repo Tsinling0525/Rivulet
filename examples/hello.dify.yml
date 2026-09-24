@@ -1,0 +1,66 @@
+version: "0.6.0"
+kind: app
+app:
+  name: Hello
+  mode: workflow
+  description: Minimal start -> template -> end workflow
+  icon: "\U0001F44B"
+  icon_type: emoji
+workflow:
+  graph:
+    nodes:
+      - id: "start_node"
+        type: custom
+        position: {x: 80, y: 282}
+        data:
+          type: start
+          title: Start
+          desc: "Takes a name"
+          variables:
+            - variable: name
+              label: name
+              type: text-input
+              required: true
+              max_length: 120
+      - id: "template_node"
+        type: custom
+        position: {x: 380, y: 282}
+        data:
+          type: template-transform
+          title: Template
+          desc: "Greets the input"
+          template: "Hello {{ name }}, this workflow ran locally."
+          variables:
+            - variable: name
+              value_selector: ["start_node", "name"]
+              value_type: string
+      - id: "end_node"
+        type: custom
+        position: {x: 680, y: 282}
+        data:
+          type: end
+          title: End
+          desc: "Returns the greeting"
+          outputs:
+            - variable: greeting
+              value_selector: ["template_node", "output"]
+              value_type: string
+    edges:
+      - id: "start_node-source-template_node-target"
+        source: "start_node"
+        sourceHandle: "source"
+        target: "template_node"
+        targetHandle: "target"
+        type: custom
+        data: {sourceType: start, targetType: template-transform}
+      - id: "template_node-source-end_node-target"
+        source: "template_node"
+        sourceHandle: "source"
+        target: "end_node"
+        targetHandle: "target"
+        type: custom
+        data: {sourceType: template-transform, targetType: end}
+    viewport: {x: 0, y: 0, zoom: 0.7}
+  features: {}
+  environment_variables: []
+  conversation_variables: []

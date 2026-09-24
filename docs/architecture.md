@@ -1,161 +1,177 @@
-# Runtime architecture
+# Architecture
 
-Rivulet has exactly one execution surface: the coding-agent CLI. Workflow
-orchestration is deliberately **not** in this repository — n8n and Dify own workflow
-design, scheduling, retries, and automation, and Rivulet reaches them only through the
-`trigger` HTTP boundary. The guiding principle is unchanged: contracts belong to stable
-packages, concrete providers are chosen at a composition root.
-
-## Current runtime model
+Rivulet is a tiny workflow system: it loads a Dify-style workflow DSL file, validates it,
+executes it locally, and reports outputs plus a per-node trace. There is no server, no
+database, and no UI — that boundary is deliberate and permanent (see the decision record
+at the end).
 
 ```text
-CLI composition root (cmd/rivulet)
+*.dify.yml
   |
-  +-- coding agent capability context
-  |     +-- ToolResolver -> coding tool registry (approval-gated, cwd-confined)
-  |     +-- AgentLoop    -> Harness (planner / tool / reflector policy)
+  +-- dsl.Load / dsl.Parse        envelope: version, kind, app, workflow.graph
+  +-- dsl.Validate                structure, cycles, references, unsupported types
+  +-- workflow.Validate           dsl checks + per-node handler validation
   |
-  +-- trigger client
-        +-- HTTP request -> external n8n webhook / Dify app API
+  +-- workflow.Run
+  |     scheduler  -> edge-driven: a node runs once all incoming edges resolve
+  |     per node   -> pool snapshot, handler.Run, fields published to the pool
+  |     policy     -> retry_config, error_strategy
+  |     trace      -> Step{Index, NodeID, Status, Branch, Retries, Timings, Outputs}
+  |
+  +-- Result{Outputs, Answers, Steps} -> human table | --json | --trace FILE
 ```
 
-`runtime.Context` is a composition-time capability registry, not an application-wide
-service locator. Components call `runtime.Require` at a composition boundary, then
-receive normal constructor dependencies. The migrated capabilities are
-`agent.ToolResolver` and `agent.AgentLoop`.
+## Packages
 
-## Capability graph and contracts
+| Package | Responsibility |
+|---|---|
+| `dsl` | DSL types matching Dify 0.6.0, parsing, and static validation |
+| `expr` | The run pool, `{{#node.field#}}`/`{{ name }}` rendering, dotted lookups |
+| `nodes` | The nine node handlers and the explicit registry |
+| `workflow` | Scheduler/executor (`engine.go`) and node policy (`policy.go`) |
+| `llmclient` | Shared OpenAI-compatible model client |
+| `agent`, `runtime` | Coding-agent harness and scoped capability composition |
+| `cmd/rivulet` | CLI: flags, input coercion, model overrides, output formatting |
 
-```text
-AgentLoop
-  requires (by its implementation): Planner, Reflector, ToolResolver
-  emits: ExecutionEvent
+Dependency direction is one-way: `cmd` → `workflow` → (`nodes`, `expr`, `dsl`) → `llmclient`.
+Nothing in `dsl`, `expr`, or `workflow` imports `cmd`, and `nodes` never imports `workflow`.
 
-ToolResolver
-  provider: Registry
-  consumers: Harness and future agent-loop implementations
+## Execution model
 
-TriggerClient (cmd/rivulet/trigger.go)
-  requires: target URL, method, body source, headers, timeout
-  emits: HTTP request; prints status, body, and non-2xx failures
-```
+**Edges carry the branch decision.** Every edge has a `sourceHandle`: `"source"` for the
+single-output nodes, a case ID or `"false"` for `if-else`. When a node completes, the
+scheduler marks each outgoing edge as traversed or ruled out, and decrements the
+target's pending count.
 
-`AgentLoop` is the policy boundary:
+**A node runs when all incoming edges are resolved.** If at least one edge was
+traversed, the node runs. If every incoming edge was ruled out, the node is `skipped`,
+and its own outgoing edges are ruled out in turn — which is how an entire untaken branch
+chain ends up as `skipped` rather than hanging the run or executing pointlessly.
+
+**Independent nodes run in parallel**, bounded by `--concurrency` (default 4). Each node
+receives a snapshot of the variable pool, so a running node can never observe a write
+from a node that started later. This is why the pool is copied rather than shared: two
+http nodes fanning out from the same start node must both see a stable view.
+
+**Failures follow Dify's `error_strategy`:**
+
+- `terminated` (default) — the run aborts with the failing node's ID and error.
+- `continue-on-error` / `remove-abnormal-output` — the step is recorded as `failed`, the
+  downstream nodes still run, and references to that node resolve to its `default_value`
+  entries, or to an empty string through a wildcard entry. A workflow that depends on a
+  flaky endpoint can therefore keep going and report partial results.
+
+**`retry_config`** is honoured per node: `max_retries` (clamped to 10), `retry_interval`
+in milliseconds, and optional exponential backoff with `multiplier`/`max_interval`.
+
+## Variable resolution
+
+Two forms, both from Dify:
+
+- `{{#node_id.field#}}` inside text fields (prompts, templates, URLs, bodies, answers).
+- `[node_id, field]` in structured fields (`value_selector`, `variable_selector`).
+
+The field part may be dotted to walk nested objects. Reserved prefixes are `sys`
+(`timestamp`, `user_id`), `env` (the DSL `environment_variables` block), and
+`conversation` (accepted, unused until chat memory exists).
+
+An unknown reference is a **hard error**, not an empty string: silently empty variables
+hide DSL typos, and a workflow that renders `Hello ` because a node ID was mistyped is
+worse than one that refuses to run. The single exception is a node that failed under
+`continue-on-error`, which carries an explicit empty wildcard.
+
+## Node contract
 
 ```go
-type AgentLoop interface {
-    Run(context.Context, string) (RunResult, error)
+type Handler interface {
+    Type() string
+    Validate(node dsl.Node) []dsl.Problem
+    Run(ctx context.Context, req Request) (Output, error)
 }
 ```
 
-`agent.Harness` is the current plan/tool/reflect implementation, and
-`agent.VerificationHarness` wraps any loop with a grader plus feedback retries. ReAct,
-plan-and-execute, reviewer, or deterministic loops can implement the same contract
-without owning model clients, tools, or storage.
+`Request` carries the node, a pool snapshot, the start-node inputs, the model override,
+a shared HTTP client, and a work directory. `Output` is a field map plus an optional
+`Branch` (the selected outgoing handle). Handlers are ordinary code: helpers inside a
+handler are not capabilities, and there is no plugin indirection for every function.
 
-## Lifecycle model
+`registry.go`-style magic is deliberately absent: `nodes.Registry()` lists the handlers,
+so a missing node type is a visible error at validate *and* run time instead of an
+implicit "not registered because a blank import was deleted".
 
-```text
-create scope
-  -> provide capabilities / perform registrations
-  -> record each returned cleanup as an effect
-  -> run scope-owned workers
-  -> close scope
-       -> cancel workers
-       -> wait for workers
-       -> dispose effects in reverse registration order
-```
+## Static validation
 
-`runtime.Scope` owns effects and goroutines. `runtime.ProvideInScope` removes a
-provided capability when the scope closes. Tool registry registrations return
-idempotent disposers that restore the preceding provider or remove the tool, so
-temporary tool overlays cannot leak across sessions.
+`rivulet validate` runs both layers:
 
-## Coupling identified in the audit
+- **Graph** (`dsl.Validate`): `kind: app`, a supported `app.mode`, unique node IDs, no
+  `parentId` containers, exactly one start node, at least one end node (or answer node in
+  advanced-chat), edges referencing real nodes, no cycles (DFS), if-else handles matching
+  declared cases, every reference pointing at a real node, and reachability warnings.
+- **Nodes** (`workflow.Validate`): each handler's `Validate`, e.g. an `llm` node without a
+  prompt, a `code` node without code or with `code_language: javascript`, an `http-request`
+  node with an unsupported method or body type.
 
-- `runAgentCLIWithIO` previously constructed the concrete model client, planner and
-  reflector policy, mutable tool registry, and harness loop together, with no contract
-  for substituting the loop. This is fixed: the loop is provided as `agent.AgentLoop`
-  and resolved through the capability context.
-- `agent.Harness` held mutable step state internally for a run but exposed no
-  append-only execution stream or session boundary. Partially fixed by
-  `RunResult.Events`; persistence is still open.
-- `agent.Registry.Register` mutated shared registry state without a matching cleanup
-  operation. Fixed with disposers.
-- The trigger client is intentionally a thin transport. It must never grow workflow
-  semantics (branching, retries, node types); those are the orchestrator's job.
+Dify node types that Rivulet does not implement produce an **error** (`dsl.Unsupported`),
+never a silent no-op. Dify features that are accepted but not implemented — `vision`,
+`context`/knowledge retrieval, `structured_output`, `fail-branch` edges, triggers —
+produce **warnings** so a file exported from Dify still validates while being honest
+about what will not happen. See [dify-compat.md](dify-compat.md).
 
-## Agent execution events
+## Lifecycle and ownership
 
-The agent still returns the compatible mutable `RunResult`/`Steps` structure.
-Alongside it, `RunResult.Events` appends structured records for run start, step
-start/completion, successful completion, failure, and max-step exhaustion.
-`ExecutionEventSink` lets a future session store persist the same stream.
-
-```text
-goal -> AgentLoop -> plan -> tool -> observation -> reflection
-                  -> append ExecutionEvent -> RunResult
-```
-
-This is intentionally a staged migration, not a persistence rewrite.
+`runtime.Scope` owns effects for the agent CLI: capabilities provided through
+`runtime.ProvideInScope` are disposed in reverse order when the scope closes, and tool
+registry registrations return idempotent disposers. The workflow runner needs no such
+machinery — its only long-lived resources are the HTTP client and the temp scripts that
+`code` nodes create and remove around each execution.
 
 ## Security invariants
 
-- Coding-agent mutations and shell commands pass through the CLI's approval mode;
-  `--approve never` remains a dry run and must not execute a command or write a file.
-- Workspace file tools resolve paths beneath the configured agent workspace.
-- Trace files redact API keys, tokens, secrets, and passwords before writing.
-- Credentials remain provider configuration (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`),
-  never runtime capability values, execution events, or CLI output.
+- `code` nodes execute a local `python3` process with the caller's privileges; the runner
+  writes to a temp file next to the workflow and deletes it afterwards. Only run DSL files
+  you trust.
+- `http-request` sends credentials only when the DSL (or an input) provides them; an empty
+  key means no auth header rather than a literal `Bearer ` header.
+- The agent CLI keeps approval gating (`--approve never` is a dry run), workspace
+  confinement for file tools, and redaction of keys, tokens, secrets, and passwords in
+  traces. Credentials stay in the environment, never in traces or CLI output.
+- No secret is ever written into a DSL file by Rivulet: the DSL contains selectors, not
+  values, unless the author hardcodes one.
 
-Approval and workspace confinement are runtime entry-point invariants, not optional
-tool-plugin conventions. Future external tool providers must be wrapped by the same
-enforcement path before registration.
+## Decision record
 
-## Decision record: the workflow engine was removed
+Rivulet previously carried, in sequence, a custom workflow engine with 17 node types and
+a node registry, a productized frontend/backend, and finally a coding-agent CLI. On
+2026-09-10 the workflow stack, the product surface, and their stores were removed, and
+workflows were delegated to n8n/Dify through an HTTP trigger. That reversal was itself
+the wrong answer: it left the repository with no reason to exist beyond a thinner copy of
+existing tools.
 
-The repository previously carried its own workflow stack: `engine/` (scheduler,
-executor, retry, pause), `plugin/` (node interface and registry), `nodes/` (17 node
-handlers), `format/n8n/` (n8n JSON parser), `model/` (workflow types), `memory/`,
-`infra/` (local stores, queues, metrics, migrations), `data/` (example workflows,
-scripts, files), and a productized frontend/backend surface under `Manifield/` and
-`apps/`.
+The current position is:
 
-That stack was removed because:
+- **A tiny workflow system, with Dify as the reference model.** Not "an n8n clone", not "a
+  platform", not "an agent framework with a workflow attachment".
+- **Local-first.** One binary, no server, no database, no browser. Deploying a Dify
+  instance to run a five-node graph locally is the problem this solves.
+- **Dify-shaped on purpose.** Node types, DSL field names, variable reference syntax,
+  branch handles, and error/retry semantics follow Dify so files are portable in both
+  directions and the documentation is short.
+- **Deliberately incomplete.** Nine node types and a documented list of what will never
+  be implemented beat a partial reimplementation of the platform.
+- **The churn rule.** Every previous identity was *added* rather than *replacing* the
+  last, which is how the repository ended up describing four architectures at once. From
+  here: a new identity must delete the old one or live in its own repository, and the
+  docs must describe exactly one architecture.
 
-- Maintaining a general DAG engine, a node registry with implicit `init()`
-  registration, a checkpoint/review store, and a workflow UI duplicated what n8n and
-  Dify already do better, and the duplication was the largest source of coupling in the
-  audit above.
-- The engine's value depended on the CLI importing every node package as a blank
-  import, so node availability was implicit rather than composed.
-- The agent harness is the part with a distinct reason to exist, and it never depended
-  on the workflow packages: `agent/` uses only the standard library, and
-  `cmd/rivulet/agent_*.go` depends on `agent/` plus `runtime/`.
+## Remaining work
 
-Consequences: `go.mod` has no `require` block and no `go.sum`; the previously required
-`github.com/tetratelabs/wazero` dependency is gone with the `wasm` node. Workflow
-definitions, retries, and scheduling now live in n8n/Dify and are invoked with
-`rivulet trigger`.
-
-## Migration plan
-
-1. **Completed:** typed capability availability, scoped effects, reversible agent-tool
-   registration, an `AgentLoop` contract, and agent execution events.
-2. **Completed:** removal of the in-repo workflow engine (`engine/`, `plugin/`,
-   `nodes/`, `format/`, `model/`, `memory/`, `infra/`, `data/`, `Manifield/`, `apps/`),
-   replaced by the `trigger` boundary to n8n/Dify.
-3. Extract model-provider contracts from the command-layer OpenAI-compatible client,
-   then inject them into agent policy implementations.
-4. Add a durable session event store and snapshot folding while retaining the existing
-   JSONL trace and `RunResult` APIs.
-5. Centralize approval/sandbox enforcement around all privileged agent tool execution
-   before supporting third-party tool providers.
-
-## Intentional non-capabilities
-
-Small helpers, prompt-formatting functions, retry math, and JSON parsing remain
-ordinary code. Rivulet does not use a plugin abstraction for every function; a
-capability is introduced only when an implementation, lifecycle, test boundary,
-permission boundary, or consumer relationship is independent. The same restraint
-applies to the trigger command: it is one HTTP call, not a workflow abstraction.
+1. Extract model-provider contracts from the command layer and inject them into the agent
+   policy implementations (agent side, unchanged by this rewrite).
+2. Durable session event store and snapshot folding for agent runs, retaining the JSONL
+   trace and `RunResult` APIs.
+3. Chat memory / `conversation_variables` for advanced-chat mode (currently accepted and
+   unused).
+4. File inputs and outputs for `start`, `http-request`, and `end` (`file` typed variables,
+   multipart uploads).
+5. Optional `iteration` container support, if a real workflow needs it — the scheduler's
+   edge model is the prerequisite, not a rewrite.

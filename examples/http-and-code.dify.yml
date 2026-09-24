@@ -1,0 +1,106 @@
+version: "0.6.0"
+kind: app
+app:
+  name: HTTP and Code
+  mode: workflow
+  description: Fetches JSON over HTTP, reshapes it with a python3 code node, writes a trace
+  icon: "\U0001F310"
+  icon_type: emoji
+workflow:
+  graph:
+    nodes:
+      - id: "start_node"
+        type: custom
+        position: {x: 80, y: 282}
+        data:
+          type: start
+          title: Start
+          desc: "url is required; pass it with --input url=..."
+          variables:
+            - variable: url
+              label: url
+              type: text-input
+              required: true
+            - variable: token
+              label: token
+              type: text-input
+              required: false
+      - id: "http_node"
+        type: custom
+        position: {x: 380, y: 282}
+        data:
+          type: http-request
+          title: HTTP Request
+          desc: "GET the URL with a bearer token when one is supplied"
+          method: GET
+          url: "{{#start_node.url#}}"
+          headers: "Accept: application/json"
+          authorization:
+            type: api-key
+            config:
+              type: bearer
+              api_key: "{{#start_node.token#}}"
+          timeout: 20
+          error_strategy: continue-on-error
+          default_value: {status_code: 0, body: null}
+      - id: "code_node"
+        type: custom
+        position: {x: 680, y: 282}
+        data:
+          type: code
+          title: Code
+          desc: "python3: main(**inputs) -> dict"
+          code_language: python3
+          code: |
+            def main(status_code, body):
+                keys = sorted(body.keys()) if isinstance(body, dict) else []
+                return {
+                    "status": status_code,
+                    "kind": type(body).__name__,
+                    "keys": ",".join(keys),
+                }
+          variables:
+            - variable: status_code
+              value_selector: ["http_node", "status_code"]
+            - variable: body
+              value_selector: ["http_node", "body"]
+          outputs:
+            status: {type: number}
+            kind: {type: string}
+            keys: {type: string}
+      - id: "end_node"
+        type: custom
+        position: {x: 980, y: 282}
+        data:
+          type: end
+          title: End
+          outputs:
+            - variable: status
+              value_selector: ["code_node", "status"]
+              value_type: number
+            - variable: payload_shape
+              value_selector: ["code_node", "keys"]
+              value_type: string
+            - variable: raw
+              value_selector: ["http_node", "body"]
+              value_type: object
+    edges:
+      - id: "start_node-source-http_node-target"
+        source: "start_node"
+        sourceHandle: "source"
+        target: "http_node"
+        targetHandle: "target"
+      - id: "http_node-source-code_node-target"
+        source: "http_node"
+        sourceHandle: "source"
+        target: "code_node"
+        targetHandle: "target"
+      - id: "code_node-source-end_node-target"
+        source: "code_node"
+        sourceHandle: "source"
+        target: "end_node"
+        targetHandle: "target"
+    viewport: {x: 0, y: 0, zoom: 0.7}
+  features: {}
+  environment_variables: []
+  conversation_variables: []

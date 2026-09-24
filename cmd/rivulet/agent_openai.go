@@ -1,16 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Tsinling0525/rivulet/agent"
+	"github.com/Tsinling0525/rivulet/llmclient"
 )
 
 type textClient interface {
@@ -31,65 +29,15 @@ func (c openAITextClient) Complete(ctx context.Context, prompt string) (string, 
 	if c.APIKey == "" {
 		return "", fmt.Errorf("OPENAI_API_KEY is not set")
 	}
-	model := strings.TrimSpace(c.Model)
-	if model == "" {
-		model = "gpt-5-mini"
-	}
-	endpoint := strings.TrimSpace(c.Endpoint)
-	if endpoint == "" {
-		endpoint = "https://api.openai.com/v1/responses"
-	}
-	maxTokens := c.MaxOutputTokens
-	if maxTokens <= 0 {
-		maxTokens = 1200
-	}
-
-	payload := map[string]any{
-		"model": model,
-	}
-	for key, value := range c.ExtraFields {
-		payload[key] = value
-	}
-	if strings.Contains(endpoint, "/chat/completions") {
-		payload["messages"] = []map[string]string{{"role": "user", "content": prompt}}
-		payload["max_tokens"] = maxTokens
-		if c.ResponseFormat != "" {
-			payload["response_format"] = map[string]string{"type": c.ResponseFormat}
-		}
-	} else {
-		payload["input"] = prompt
-		payload["max_output_tokens"] = maxTokens
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := c.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 90 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("openai error: status %s body=%s", resp.Status, strings.TrimSpace(string(data)))
-	}
-	return extractOpenAIText(endpoint, data)
+	return llmclient.Complete(ctx, llmclient.Config{
+		Endpoint:        c.Endpoint,
+		APIKey:          c.APIKey,
+		Model:           c.Model,
+		MaxOutputTokens: c.MaxOutputTokens,
+		ResponseFormat:  c.ResponseFormat,
+		ExtraFields:     c.ExtraFields,
+		HTTPClient:      c.HTTPClient,
+	}, prompt)
 }
 
 type jsonPlanner struct {
@@ -275,49 +223,6 @@ func summarizeAgentState(state agent.State) string {
 		})
 	}
 	return marshalCompact(steps)
-}
-
-func extractOpenAIText(endpoint string, body []byte) (string, error) {
-	if strings.Contains(endpoint, "/chat/completions") {
-		var parsed struct {
-			Choices []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			return "", err
-		}
-		if len(parsed.Choices) == 0 {
-			return "", fmt.Errorf("openai response contained no choices")
-		}
-		return parsed.Choices[0].Message.Content, nil
-	}
-
-	var parsed struct {
-		OutputText string `json:"output_text"`
-		Output     []struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"output"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(parsed.OutputText) != "" {
-		return parsed.OutputText, nil
-	}
-	for _, output := range parsed.Output {
-		for _, content := range output.Content {
-			if content.Type == "output_text" || content.Type == "text" {
-				return content.Text, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("openai response contained no output text")
 }
 
 func unmarshalJSONResponse(text string, target any) error {

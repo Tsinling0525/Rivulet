@@ -1,106 +1,136 @@
 # Rivulet
 
-Rivulet is a small Go CLI for running an autonomous coding agent in a workspace.
-It is deliberately not an orchestrator: workflow design, scheduling, and long-running
-automation belong to [n8n](https://n8n.io) or [Dify](https://dify.ai). Rivulet triggers
-those systems over HTTP and gets out of the way.
+**A tiny workflow system.** Rivulet runs Dify-style workflow DSL files locally: one Go
+binary, no server, no database, no browser. You write (or export from Dify) a
+`*.dify.yml` graph, run it with `rivulet run`, and get the outputs plus a per-node trace.
 
-## What is in here
-
-```text
-Rivulet/
-├── agent/          # agent harness: planner / tool / reflector policy, verification loop
-├── cmd/rivulet/    # CLI entrypoint (agent + trigger) and the OpenAI-compatible client
-├── runtime/        # scoped capability composition and lifecycle
-└── docs/           # architecture notes
+```bash
+rivulet run --file examples/hello.dify.yml --input name=world
 ```
 
-Three packages, standard library only, no runtime dependencies.
+```text
+Hello (workflow)
+[1] start                completed    0s  fields=name
+[2] template-transform   completed    0s  fields=output
+[3] end                  completed    0s  fields=greeting
+finished in 0s
+outputs:
+  greeting: Hello world, this workflow ran locally.
+```
+
+## Positioning
+
+This is the project's identity, and it is frozen:
+
+- **What it is:** a tiny workflow system. Dify's workflow model — its DSL envelope,
+  node types, variable references, branching, and error/retry semantics — is the
+  reference design, implemented as a local CLI rather than a platform.
+- **What it is not, permanently:** no web server or UI, no database or multi-tenancy,
+  no plugin marketplace, no knowledge base or vector store, no scheduler or triggers,
+  no user/auth model. Those are the parts that made earlier iterations of this project
+  unmaintainable.
+- **The one rule that keeps this true:** a new product identity must either delete the
+  old one or live in its own repository, and the docs must describe exactly one
+  architecture. Never two. Workflow orchestration belongs here; anything that starts
+  to look like a platform does not.
+- **The coding agent is a sibling, not the product.** `rivulet agent` is a workable
+  Claude-Code-style loop that shares the model client (`llmclient`) and nothing else.
+  It is kept because it works and is tested; it is not the reason this repository
+  exists.
+
+## Install and build
+
+```bash
+make build      # -> bin/rivulet
+make test       # go test ./... -race -count=1
+make vet        # go vet ./...
+make run        # run examples/hello.dify.yml
+make examples   # validate every examples/*.dify.yml
+```
+
+Requires Go 1.22+. The only dependency is `gopkg.in/yaml.v3` (DSL parsing).
 
 ## Commands
 
 ```bash
-make build   # -> bin/rivulet
-make test    # go test ./... -race -count=1
-make lint    # golangci-lint (optional)
-make run     # interactive agent loop in the repo root
+rivulet run --file app.dify.yml [--input k=v ...] [flags]
+rivulet validate --file app.dify.yml
+rivulet nodes
+rivulet agent [--once "goal"] [flags]
 ```
 
-## Agent CLI
+### `rivulet run`
 
-A minimal Claude Code-style loop:
+| Flag | Purpose |
+|---|---|
+| `--file` | Workflow DSL file (`.yml` or `.json`) |
+| `--input k=v` | Workflow input; repeatable, overrides `--input-file` |
+| `--input-file` | JSON object of inputs, or `-` for stdin |
+| `--json` | Print the result (outputs, answers, per-node steps) as JSON |
+| `--trace PATH` | Write a JSON run trace to `PATH` |
+| `--concurrency N` | Maximum nodes running at once (default 4) |
+| `--provider` | Override the llm provider: `openai`, `deepseek`, `ollama` |
+| `--model` / `--endpoint` / `--api-key` | Override the llm model configuration |
 
-```text
-goal -> plan -> tool call -> observation -> reflection -> stop/replan
-```
+CLI model flags win over the DSL, which is what makes it possible to run a workflow
+against a local stub or a different vendor without editing the file. Inputs are parsed
+as JSON when they look like JSON, so `--input count=7` arrives as a number.
 
-Set a key, then run one goal or start the interactive loop:
+### `rivulet validate`
 
-```bash
-export OPENAI_API_KEY=...
-go run ./cmd/rivulet agent --once "inspect this repo and run the tests"
+Static checks: the DSL envelope, one start node, at least one end (or answer) node,
+duplicate IDs, dangling edges, cycles, unreachable nodes, every `{{#node.field#}}`
+reference pointing at a real node, if-else edge handles matching declared cases, and
+per-node configuration. Errors exit 1; warnings (unreachable nodes, Dify features that
+are accepted but not implemented) print and exit 0.
 
-export DEEPSEEK_API_KEY=...
-go run ./cmd/rivulet agent --provider deepseek --once "inspect this repo and run the tests"
+## Nodes
 
-go run ./cmd/rivulet agent
-```
+Nine node types, matching Dify's names and field shapes:
 
-Flags:
+| Type | Behavior |
+|---|---|
+| `start` | Workflow inputs; typed, required/optional, optional inputs resolve to `""` |
+| `end` | Declares outputs via `value_selector`; missing branches emit `null` |
+| `answer` | Renders a chatflow answer string (advanced-chat mode) |
+| `llm` | One chat completion over an OpenAI-compatible endpoint |
+| `code` | `python3` snippet: `main(**inputs) -> dict` |
+| `if-else` | Ordered cases (`and`/`or`) + `false` branch, selected by edge `sourceHandle` |
+| `template-transform` | Text template over mapped variables |
+| `http-request` | Method, URL, params, headers, JSON/raw/form bodies, api-key/custom auth |
+| `variable-aggregator` | Picks whichever branch actually ran |
 
-```bash
-go run ./cmd/rivulet agent --provider deepseek --cwd . --model deepseek-v4-flash \
-  --max-steps 48 --approve always --trace on
-```
+Variable references use Dify's two forms: `{{#node_id.field#}}` inside text and
+`[node_id, field]` in structured fields (`value_selector`, `variable_selector`). Dotted
+paths walk nested values, so `{{#code_node.result.items#}}` works. An unknown reference
+is an error rather than an empty string — silent empties hide DSL typos.
 
-| Flag | Default | Purpose |
-|---|---|---|
-| `--provider` | `openai` | `openai` or `deepseek` (`RIVULET_AGENT_PROVIDER`) |
-| `--cwd` | `.` | Workspace directory; file tools are confined to it |
-| `--model` | provider default | Model name (`RIVULET_AGENT_MODEL`) |
-| `--endpoint` | provider default | OpenAI-compatible endpoint (`RIVULET_AGENT_ENDPOINT`) |
-| `--once` | - | Run a single goal and exit |
-| `--max-steps` | `48` | Maximum loop steps per goal |
-| `--approve` | `always` | `always`, or `never` for dry-run |
-| `--trace` | `on` | `on` writes JSONL traces to `.rivulet/runs/` |
+`rivulet nodes` prints this table plus every Dify node type that is deliberately not
+implemented (`iteration`, `tool`, `knowledge-retrieval`, `agent`, triggers, ...).
+See [docs/dify-compat.md](docs/dify-compat.md) for the field-level compatibility notes.
 
-Tools: `list_files`, `read_file`, `edit_file`, `replace_lines`, `write_file`, `shell`.
-Use `read_file` with line numbers and then `replace_lines` when exact text replacement
-would be brittle. Secrets are redacted before they reach a trace file.
+## Examples
 
-`--approve never` is a dry run: mutating tools report what they would do without
-changing files or running commands.
+| File | Shows |
+|---|---|
+| `examples/hello.dify.yml` | start → template → end |
+| `examples/branch.dify.yml` | if-else routing plus a variable aggregator |
+| `examples/http-and-code.dify.yml` | HTTP fetch, `continue-on-error`, python3 reshaping |
+| `examples/llm-chat.dify.yml` | advanced-chat: llm → answer, with retry config |
 
-## Triggering n8n or Dify
+The first two run offline. `http-and-code` needs `--input url=...`; `llm-chat` needs
+`OPENAI_API_KEY` (or `--provider deepseek` / `--endpoint` for anything else).
 
-Rivulet does not execute workflows. It hands a payload to an external orchestrator:
+## Security
 
-```bash
-# n8n webhook
-rivulet trigger --url https://n8n.example.com/webhook/research \
-  --data '{"topic":"rivulet","depth":2}'
+- `code` nodes execute a local `python3` process with your privileges. Only run
+  workflow files you trust.
+- `http-request` renders URLs, headers, and bodies from workflow variables. Credentials
+  passed as inputs end up in outbound requests by design, so pass them with `--input`
+  or environment variables rather than committing them to a DSL file.
+- The agent CLI keeps its own invariants: mutations and shell commands are gated by
+  `--approve` (`never` is a dry run), file tools are confined to `--cwd`, and trace
+  files redact keys, tokens, secrets, and passwords.
 
-# Dify app API
-rivulet trigger --url https://api.dify.ai/v1/workflows/run \
-  --header "Authorization: Bearer app-xxxx" \
-  --data '{"inputs":{"topic":"rivulet"},"response_mode":"blocking","user":"cli"}'
-
-# body from a file or stdin
-rivulet trigger --url "$RIVULET_TRIGGER_URL" --file payload.json
-cat payload.json | rivulet trigger --url "$RIVULET_TRIGGER_URL" --file -
-```
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--url` | `RIVULET_TRIGGER_URL` | Webhook or API endpoint |
-| `--method` | `POST` with a body, else `GET` | HTTP method |
-| `--data` | - | Request body as a literal string |
-| `--file` | - | Body file, or `-` for stdin |
-| `--header` | - | `"Name: value"`, repeatable (auth goes here) |
-| `--timeout` | `30` | Seconds |
-
-The response status and body are printed; any `4xx`/`5xx` exits non-zero with the body
-still printed, so an n8n error node or a Dify failure is visible in the shell.
-
-See [docs/architecture.md](docs/architecture.md) for the capability model, lifecycle
-ownership, and the reasons the workflow engine was removed.
+See [docs/architecture.md](docs/architecture.md) for the scheduler, branch, and
+lifecycle model.
