@@ -1,0 +1,75 @@
+{
+  "processCode": "contract_approval",
+  "processName": "合同审批（含超时策略与退回）",
+  "version": 1,
+  "description": "全量审批操作演示：会签比例通过、加签、退回、撤回、超时自动处理（PRD §10/§11/§12）",
+  "variables": {"contractNo": "", "amount": 0},
+  "config": {
+    "events": [
+      {
+        "type": "TASK_TIMEOUT",
+        "listener": {"type": "HTTP", "url": "http://ops-service/alert"}
+      }
+    ]
+  },
+  "nodes": [
+    {"id": "start", "type": "START", "name": "开始"},
+    {
+      "id": "draft",
+      "type": "USER_TASK",
+      "name": "拟定合同",
+      "assignee": {"type": "INITIATOR"},
+      "allowWithdraw": true,
+      "formPermissions": [
+        {"field": "contractNo", "visible": true, "editable": true, "required": true},
+        {"field": "amount", "visible": true, "editable": true, "required": true}
+      ]
+    },
+    {
+      "id": "legalReview",
+      "type": "USER_TASK",
+      "name": "法务会签",
+      "assignee": {"type": "ROLES", "users": ["LEGAL", "LEGAL_LEAD", "COMPLIANCE"]},
+      "completeStrategy": "RATIO",
+      "ratio": 0.67,
+      "rejectPolicy": "NODE",
+      "rejectTarget": "draft",
+      "taskTimeout": {
+        "duration": "PT24H",
+        "actions": [
+          {"type": "REMIND", "channel": "EMAIL"},
+          {"type": "ESCALATE", "target": "1"}
+        ]
+      }
+    },
+    {
+      "id": "financeReview",
+      "type": "USER_TASK",
+      "name": "财务复核",
+      "assignee": {"type": "ROLE", "value": "FINANCE_MANAGER"},
+      "completeStrategy": "SEQUENCE",
+      "taskTimeout": {
+        "duration": "PT48H",
+        "actions": [
+          {"type": "REMIND", "channel": "INNER"},
+          {"type": "AUTO_REJECT"}
+        ]
+      }
+    },
+    {
+      "id": "signing",
+      "type": "USER_TASK",
+      "name": "用印",
+      "assignee": {"type": "POSITION", "value": "SEAL_KEEPER"},
+      "completeStrategy": "ANY"
+    },
+    {"id": "end", "type": "END", "name": "结束"}
+  ],
+  "edges": [
+    {"id": "e1", "source": "start", "target": "draft"},
+    {"id": "e2", "source": "draft", "target": "legalReview"},
+    {"id": "e3", "source": "legalReview", "target": "financeReview"},
+    {"id": "e4", "source": "financeReview", "target": "signing"},
+    {"id": "e5", "source": "signing", "target": "end"}
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "processCode": "order_delivery",
+  "processName": "订单履约流程",
+  "version": 1,
+  "description": "业务编排：脚本打分 → 风控分支 → 服务调用 → 等待支付回调 → 子流程发货",
+  "variables": {"orderId": "", "amount": 0},
+  "nodes": [
+    {"id": "start", "type": "START", "name": "开始"},
+    {
+      "id": "riskScore",
+      "type": "SCRIPT_TASK",
+      "name": "风控打分",
+      "script": {
+        "language": "wfscript",
+        "content": "riskLevel = amount > 10000 ? 'HIGH' : 'LOW';\nscore = round(amount / 1000, 2);"
+      }
+    },
+    {"id": "riskGateway", "type": "EXCLUSIVE_GATEWAY", "name": "风险判断"},
+    {
+      "id": "manualReview",
+      "type": "USER_TASK",
+      "name": "人工风控复核",
+      "assignee": {"type": "ROLE", "value": "RISK_MANAGER"},
+      "completeStrategy": "ANY"
+    },
+    {
+      "id": "riskCheck",
+      "type": "SERVICE_TASK",
+      "name": "调用风控服务",
+      "service": {
+        "type": "HTTP",
+        "method": "POST",
+        "url": "http://risk-service/check",
+        "body": {"orderId": "${orderId}", "amount": "${amount}"},
+        "retry": {"maxAttempts": 3, "backoff": 1000}
+      }
+    },
+    {
+      "id": "waitPayment",
+      "type": "WAIT_TASK",
+      "name": "等待支付回调",
+      "eventKey": "order.paid"
+    },
+    {
+      "id": "ship",
+      "type": "SUB_PROCESS",
+      "name": "调用发货子流程",
+      "processCode": "shipment",
+      "subProcessInput": {"orderId": "${orderId}"},
+      "subProcessOutputs": ["trackingNo"]
+    },
+    {"id": "end", "type": "END", "name": "结束"}
+  ],
+  "edges": [
+    {"id": "e1", "source": "start", "target": "riskScore"},
+    {"id": "e2", "source": "riskScore", "target": "riskGateway"},
+    {"id": "e3", "source": "riskGateway", "target": "manualReview", "condition": "${riskLevel == 'HIGH'}"},
+    {"id": "e4", "source": "riskGateway", "target": "riskCheck", "default": true},
+    {"id": "e5", "source": "manualReview", "target": "riskCheck"},
+    {"id": "e6", "source": "riskCheck", "target": "waitPayment"},
+    {"id": "e7", "source": "waitPayment", "target": "ship"},
+    {"id": "e8", "source": "ship", "target": "end"}
+  ]
+}

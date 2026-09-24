@@ -1,0 +1,61 @@
+{
+  "processCode": "leave_approval",
+  "processName": "请假审批流程",
+  "version": 1,
+  "description": "会签 + 并行分支 + 汇聚（PRD §7.5 / §11 / §24）",
+  "variables": {"days": 0, "reason": ""},
+  "nodes": [
+    {"id": "start", "type": "START", "name": "开始"},
+    {
+      "id": "submit",
+      "type": "USER_TASK",
+      "name": "员工提交",
+      "assignee": {"type": "INITIATOR"},
+      "formPermissions": [
+        {"field": "days", "visible": true, "editable": true, "required": true},
+        {"field": "reason", "visible": true, "editable": true, "required": true}
+      ]
+    },
+    {"id": "fork", "type": "PARALLEL_GATEWAY", "name": "并行审批"},
+    {
+      "id": "hrReview",
+      "type": "USER_TASK",
+      "name": "HR 会签",
+      "assignee": {"type": "ROLES", "users": ["HR", "HR_LEAD"]},
+      "completeStrategy": "ALL",
+      "taskTimeout": {
+        "duration": "PT12H",
+        "actions": [{"type": "REMIND", "channel": "INNER"}]
+      }
+    },
+    {
+      "id": "leaderReview",
+      "type": "USER_TASK",
+      "name": "主管审批",
+      "assignee": {"type": "LEADER", "level": 1},
+      "completeStrategy": "ANY",
+      "rejectPolicy": "INITIATOR"
+    },
+    {"id": "join", "type": "PARALLEL_GATEWAY", "name": "汇聚"},
+    {
+      "id": "archive",
+      "type": "MESSAGE_TASK",
+      "name": "归档通知",
+      "channel": "EMAIL",
+      "target": "${initiator}",
+      "template": "LEAVE_APPROVED",
+      "payload": {"days": "${days}", "reason": "${reason}"}
+    },
+    {"id": "end", "type": "END", "name": "结束"}
+  ],
+  "edges": [
+    {"id": "e1", "source": "start", "target": "submit"},
+    {"id": "e2", "source": "submit", "target": "fork"},
+    {"id": "e3", "source": "fork", "target": "hrReview"},
+    {"id": "e4", "source": "fork", "target": "leaderReview"},
+    {"id": "e5", "source": "hrReview", "target": "join"},
+    {"id": "e6", "source": "leaderReview", "target": "join"},
+    {"id": "e7", "source": "join", "target": "archive"},
+    {"id": "e8", "source": "archive", "target": "end"}
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "processCode": "expense_approval",
+  "processName": "报销审批流程",
+  "version": 1,
+  "description": "PRD §8.2 示例流程：提交 → 金额判断 → 主管/总监审批 → 自动通知 → 结束",
+  "variables": {
+    "amount": 0,
+    "type": "travel"
+  },
+  "config": {
+    "events": [
+      {
+        "type": "PROCESS_COMPLETED",
+        "listener": {"type": "HTTP", "url": "http://business-system/callback/process-completed"}
+      },
+      {
+        "type": "TASK_CREATED",
+        "listener": {"type": "MQ", "topic": "process.task.created"}
+      }
+    ]
+  },
+  "nodes": [
+    {"id": "start", "type": "START", "name": "开始"},
+    {
+      "id": "submit",
+      "type": "USER_TASK",
+      "name": "提交申请",
+      "assignee": {"type": "INITIATOR"},
+      "formPermissions": [
+        {"field": "amount", "visible": true, "editable": true, "required": true},
+        {"field": "type", "visible": true, "editable": true, "required": true}
+      ],
+      "taskTimeout": {
+        "duration": "PT48H",
+        "actions": [{"type": "REMIND", "channel": "EMAIL"}]
+      }
+    },
+    {"id": "amountGateway", "type": "EXCLUSIVE_GATEWAY", "name": "金额判断"},
+    {
+      "id": "managerApproval",
+      "type": "USER_TASK",
+      "name": "主管审批",
+      "assignee": {"type": "ROLE", "value": "MANAGER"},
+      "completeStrategy": "ANY",
+      "formPermissions": [
+        {"field": "amount", "visible": true, "editable": false},
+        {"field": "type", "visible": true, "editable": false}
+      ],
+      "taskTimeout": {
+        "duration": "PT24H",
+        "actions": [
+          {"type": "REMIND", "channel": "EMAIL"},
+          {"type": "ESCALATE", "target": "2"}
+        ]
+      }
+    },
+    {
+      "id": "directorApproval",
+      "type": "USER_TASK",
+      "name": "总监审批",
+      "assignee": {"type": "ROLE", "value": "DIRECTOR"},
+      "completeStrategy": "ANY",
+      "rejectPolicy": "INITIATOR",
+      "taskTimeout": {
+        "duration": "PT24H",
+        "actions": [
+          {"type": "REMIND", "channel": "EMAIL"},
+          {"type": "AUTO_APPROVE"}
+        ]
+      }
+    },
+    {
+      "id": "notify",
+      "type": "SERVICE_TASK",
+      "name": "发送通知",
+      "service": {
+        "type": "HTTP",
+        "method": "POST",
+        "url": "http://message-service/send",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"userId": "${initiator}", "amount": "${amount}", "result": "APPROVED"},
+        "timeout": 3000,
+        "retry": {"maxAttempts": 3, "backoff": 1000}
+      }
+    },
+    {"id": "end", "type": "END", "name": "结束"}
+  ],
+  "edges": [
+    {"id": "edge-1", "source": "start", "target": "submit"},
+    {"id": "edge-2", "source": "submit", "target": "amountGateway"},
+    {"id": "edge-3", "source": "amountGateway", "target": "managerApproval", "condition": "${amount <= 10000}"},
+    {"id": "edge-4", "source": "amountGateway", "target": "directorApproval", "condition": "${amount > 10000}"},
+    {"id": "edge-5", "source": "amountGateway", "target": "managerApproval", "default": true},
+    {"id": "edge-6", "source": "managerApproval", "target": "notify"},
+    {"id": "edge-7", "source": "directorApproval", "target": "notify"},
+    {"id": "edge-8", "source": "notify", "target": "end"}
+  ]
+}

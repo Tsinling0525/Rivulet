@@ -1,0 +1,15 @@
+{
+  "users": [
+    {"id": "U10086", "name": "张三", "department": "D1", "leader": "U20001", "roles": ["STAFF"]},
+    {"id": "U20001", "name": "李四", "department": "D1", "leader": "U30001", "roles": ["MANAGER"], "positions": ["FINANCE_REVIEWER"]},
+    {"id": "U30001", "name": "王五", "department": "D0", "leader": "", "roles": ["DIRECTOR"]},
+    {"id": "U40001", "name": "赵六", "department": "D2", "leader": "U30001", "roles": ["FINANCE_MANAGER"]},
+    {"id": "U50001", "name": "孙七", "department": "D3", "leader": "U30001", "roles": ["HR"]},
+    {"id": "U50002", "name": "周八", "department": "D3", "leader": "U50001", "roles": ["HR", "HR_LEAD"]},
+    {"id": "U60001", "name": "吴九", "department": "D4", "leader": "U30001", "roles": ["LEGAL"]},
+    {"id": "U60002", "name": "郑十", "department": "D4", "leader": "U60001", "roles": ["LEGAL", "LEGAL_LEAD"]},
+    {"id": "U60003", "name": "钱十一", "department": "D4", "leader": "U60001", "roles": ["COMPLIANCE"]},
+    {"id": "U70001", "name": "孙十二", "department": "D5", "leader": "U30001", "roles": ["RISK_MANAGER"]},
+    {"id": "U80001", "name": "李十三", "department": "D5", "leader": "U30001", "roles": ["STAFF"], "positions": ["SEAL_KEEPER"]}
+  ]
+}

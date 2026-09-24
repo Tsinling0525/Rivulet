@@ -1,0 +1,35 @@
+{
+  "processCode": "shipment",
+  "processName": "发货子流程",
+  "version": 1,
+  "description": "被子流程节点调用的独立流程（PRD §4.3.7）",
+  "variables": {"orderId": "", "trackingNo": ""},
+  "nodes": [
+    {"id": "start", "type": "START", "name": "开始"},
+    {
+      "id": "warehouse",
+      "type": "SERVICE_TASK",
+      "name": "仓库出库",
+      "service": {
+        "type": "HTTP",
+        "method": "POST",
+        "url": "http://warehouse-service/ship",
+        "body": {"orderId": "${orderId}"},
+        "resultVariable": "shipResult",
+        "retry": {"maxAttempts": 2, "backoff": 500}
+      }
+    },
+    {
+      "id": "confirm",
+      "type": "SCRIPT_TASK",
+      "name": "回写运单号",
+      "script": {"language": "wfscript", "content": "trackingNo = 'SF-' + orderId;"}
+    },
+    {"id": "end", "type": "END", "name": "结束"}
+  ],
+  "edges": [
+    {"id": "e1", "source": "start", "target": "warehouse"},
+    {"id": "e2", "source": "warehouse", "target": "confirm"},
+    {"id": "e3", "source": "confirm", "target": "end"}
+  ]
+}
