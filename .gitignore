@@ -6,6 +6,18 @@
 *.dylib
 *.test
 *.out
+*.o
+*.a
+
+# CMake / C++ engine (cpp/) build trees
+/cpp/build/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+Testing/
 
 # Editor and OS
 .vscode/
